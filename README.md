@@ -63,6 +63,10 @@ Please check out the [configuration](https://docs.traduora.co/docs/configuration
 
 Please check [deployment](https://docs.traduora.co/docs/deployment) documents for more information on deploying Traduora.
 
+#### Production deployment source
+
+This repository (`nguijoel/ever-traduora`) is the production deployment source for the `resx-b` target. The production deployment branch is `platform-bootstrap`. Build and deploy production releases from that branch; do not use the separate `resx.ontoo.cloud` checkout for the `resx-b` deployment.
+
 [![Deploy on Elestio](https://elest.io/images/logos/deploy-to-elestio-btn.png)](https://elest.io/open-source/traduora)
 
 ### 👤 Default Admin User
