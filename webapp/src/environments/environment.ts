@@ -5,7 +5,7 @@
 export const environment = {
   production: false,
   title: 'traduora',
-  homepage: 'http://localhost:4201',
+  homepage: 'http://localhost:4208',
   apiEndpoint: `http://localhost:3006/api/v1`,
   inviteOnly: false,
   useCdnFlags: true,

@@ -22,6 +22,7 @@
     "fmt": "prettier --write --list-different \"**/*.ts\"",
     "check-fmt": "prettier --check \"**/*.ts\"",
     "bootstrap": "yarn install",
+    "dev": "concurrently --kill-others --names api,web \"yarn start:api\" \"yarn start:web\"",
     "build": "concurrently --raw \"yarn build:api\" \"yarn build:webapp\" \"yarn build:docs\"",
     "build:lerna": "yarn lerna run --parallel build",
     "build:api": "cross-env yarn --cwd ./api build",
