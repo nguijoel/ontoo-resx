@@ -27,4 +27,12 @@ class Tests(unittest.TestCase):
  def test_sql_is_fixed_create_only_no_adoption_unlock_or_privilege_grants(self):
   sql=Path(__file__).with_name('resx-pre-locked-probe.sql').read_text()
   self.assertEqual(sql,"CREATE USER 'ontoo_resx_pre_probe'@'172.21.0.1' REQUIRE SSL WITH MAX_USER_CONNECTIONS 1 ACCOUNT LOCK;\n")
+ def test_native_boolean_system_values_are_encoded_as_explicit_json_integers(self):
+  sql=Path(__file__).with_name('resx-pre-socket-metadata.sql').read_text()
+  for name in ('require_secure_transport','general_log','slow_query_log','log_bin','local_infile'):
+   expression="CASE UPPER(CAST(@@GLOBAL."+name+" AS CHAR)) WHEN 'ON' THEN 1 WHEN '1' THEN 1 WHEN 'OFF' THEN 0 WHEN '0' THEN 0 ELSE NULL END"
+   self.assertEqual(sql.count(expression),1)
+  for field in ('secureTransport','generalLog','slowLog','binaryLog','localInfile'):
+   v=baseline();v[field]=None
+   with self.assertRaises(ValueError):m.validate(raw(v))
 if __name__=='__main__':unittest.main()
