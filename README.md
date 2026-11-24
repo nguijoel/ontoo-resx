@@ -55,6 +55,33 @@ Traduora can be run just about anywhere, check out our [Quickstart](https://docs
 
 Also, check out Traduora's [Docker Hub page](https://hub.docker.com/r/everco/ever-traduora) for pre-built images.
 
+### Local development (ONTOO RESX)
+
+From the repository root, start the API and frontend together:
+
+```powershell
+cd C:\Dev\Repos\ontoo-resx
+yarn dev
+```
+
+- Frontend: http://localhost:4208 (opens automatically).
+- API: http://localhost:3006; health: http://localhost:3006/health.
+- Press Ctrl+C to stop both processes. If either process exits, the other is stopped too.
+
+This uses the existing `start:api` and `start:web` scripts. Configure the API for
+a local database and install its required driver before starting. Database setup and login accounts depend on the existing API configuration;
+`TR_DB_AUTOMIGRATE` and `TR_SEED_DATA` still control startup migrations and seeding.
+The default SQLite configuration requires `better-sqlite3`, which is not currently
+declared in the API dependency manifest. The separate isolated preview on port
+8080 has its own preview-only driver and is not started by `yarn dev`.
+
+To run each service separately:
+
+```powershell
+yarn start:api
+yarn start:web
+```
+
 ### Configuration
 
 Please check out the [configuration](https://docs.traduora.co/docs/configuration).
@@ -65,7 +92,15 @@ Please check [deployment](https://docs.traduora.co/docs/deployment) documents fo
 
 #### Production deployment source
 
-This repository (`nguijoel/ever-traduora`) is the production deployment source for the `resx-b` target. The production deployment branch is `platform-bootstrap`. Build and deploy production releases from that branch; do not use the separate `resx.ontoo.cloud` checkout for the `resx-b` deployment.
+The ONTOO repository is `nguijoel/ontoo-resx`. Use feature/fix branches and PRs
+into `dev` (the default integration branch); `staging` is the PRE branch and
+`main` is the protected production baseline. The old `platform-bootstrap`,
+`main`, `develop` and `custom` tips are preserved under `archive/*-20261124`.
+`clean-upstream` and the `upstream` remote remain for upstream synchronization.
+
+The historical Plesk packaging/upload scripts target `resx-b`. Branch
+restructuring did not deploy the application or validate a new production
+release, and automatic delivery is not configured by these startup commands.
 
 [![Deploy on Elestio](https://elest.io/images/logos/deploy-to-elestio-btn.png)](https://elest.io/open-source/traduora)
 
@@ -166,7 +201,7 @@ We think it's great that you'd like to contribute to Traduora.
 
 - Please give us :star: on Github, it **helps**!
 - You are more than welcome to submit feature requests in the [separate repo](https://github.com/ever-co/feature-requests/issues).
-- Pull requests are always welcome! Please base pull requests against the _develop_ branch and follow the [contribution guidelines](https://docs.traduora.co/docs/contributing).
+- For ONTOO RESX, target pull requests to `dev`. For contributions to the upstream project, follow its [contribution guidelines](https://docs.traduora.co/docs/contributing).
 
 ## 💪 Thanks to our Contributors
 
