@@ -61,7 +61,7 @@ import { PushController } from './controllers/push.controller';
       },
     }),
     ThrottlerModule.forRoot([{ ttl: config.throttle.global.ttl, limit: config.throttle.global.limit }]),
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: process.env.TR_RUNTIME_PROFILE === 'resx-phase1' }),
     RedisModule,
     TypeOrmModule.forRootAsync({
       useFactory: async () => dataSourceOptions(),
