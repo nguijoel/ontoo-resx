@@ -7,7 +7,7 @@ const phase1 = require('./resx-phase1-profile.cjs');
 const CONTRACTS = Object.freeze({
   'resx-hosted-pre': Object.freeze({
     database: 'ontoo_resx_pre', user: 'ontoo_resx_pre_runtime',
-    tcpHost: 'ontoo-resx-mariadb-pre', port: 3306,
+    tcpHost: '172.21.0.2', port: 3306,
     bind: '0.0.0.0', httpPort: '8080', origin: 'https://resx-preview.ontoo.cloud',
     nodeEnv: 'production',
   }),
@@ -29,7 +29,7 @@ function normalize(input, name) {
     throw new Error('Database/runtime account does not match the selected isolated RESX profile');
   }
   if (name === 'resx-hosted-pre' && (input.TR_DB_NETWORK_HOST !== c.tcpHost || input.TR_DB_PORT !== String(c.port))) {
-    throw new Error('Hosted PRE requires its fixed private database network alias and port');
+    throw new Error('Hosted PRE requires its fixed private database IP and port');
   }
   const normalized = {
     ...input, TR_DB_DATABASE: phase1.DATABASE, TR_DB_USER: phase1.RUNTIME_USER,

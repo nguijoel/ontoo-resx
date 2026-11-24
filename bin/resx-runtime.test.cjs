@@ -19,11 +19,11 @@ before(() => {
   input = { TR_DB_TYPE: 'mysql', TR_DB_HOST: 'localhost', TR_DB_CA_FILE: ca,
     TR_DB_PASSWORD: 'synthetic-only', TR_SECRET: 'synthetic-isolated-signing-secret',
     TR_DB_DATABASE: 'ontoo_resx_pre', TR_DB_USER: 'ontoo_resx_pre_runtime',
-    TR_DB_NETWORK_HOST: 'ontoo-resx-mariadb-pre', TR_DB_PORT: '3306' };
+    TR_DB_NETWORK_HOST: '172.21.0.2', TR_DB_PORT: '3306' };
 });
 after(() => { if (directory) fs.rmSync(directory, { recursive: true, force: true }); });
 
-test('hosted PRE locks network alias, identity, runtime account and startup controls', () => {
+test('hosted PRE locks private IP, identity, runtime account and startup controls', () => {
   const env = runtime.buildEnvironment({ ...input, TR_SEED_DATA: 'true',
     AWS_ACCESS_KEY_ID: 'synthetic', TR_MAIL_HOST: 'mail.invalid' }, 'resx-hosted-pre');
   runtime.assertRuntimeEnvironment(env);
@@ -49,6 +49,7 @@ test('hosted PRE rejects target/account/network substitutions', () => {
     { TR_DB_DATABASE: 'ontoo_resx_dev' }, { TR_DB_DATABASE: 'ontoo_resx_prod' },
     { TR_DB_USER: 'ontoo_resx_pre_restore' }, { TR_DB_USER: 'root' },
     { TR_DB_HOST: 'remote.invalid' }, { TR_DB_NETWORK_HOST: 'remote.invalid' },
+    { TR_DB_NETWORK_HOST: 'ontoo-resx-mariadb-pre' },
     { TR_DB_PORT: '13306' },
   ]) assert.throws(() => runtime.buildEnvironment({ ...input, ...edit }, 'resx-hosted-pre'));
 });

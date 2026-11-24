@@ -1,7 +1,7 @@
-# Build from repo root. NODE_IMAGE must be an Infrastructure-qualified immutable
-# Node 22 Debian bookworm-slim image reference (including @sha256 digest).
-ARG NODE_IMAGE
-FROM ${NODE_IMAGE} AS builder
+# Build only from the immutable allowlisted Git export.
+# Infrastructure-qualified Node 22.23.5 / Debian bookworm / linux-amd64.
+FROM docker.io/library/node@sha256:47725aca53d3295ec2d3be8f62726599b3033cc262edc2c7e429909b3ac599fc AS builder
+USER 0
 WORKDIR /opt/resx
 RUN node -e "if(process.versions.node.split('.')[0]!=='22')process.exit(1)"
 RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ ca-certificates \
@@ -25,14 +25,13 @@ RUN cp package.json package.build.json \
     && rm -rf node_modules api/node_modules webapp/node_modules docs-website/node_modules \
     && yarn install --production --frozen-lockfile --non-interactive
 
-ARG NODE_IMAGE
-FROM ${NODE_IMAGE} AS runtime
+FROM docker.io/library/node@sha256:47725aca53d3295ec2d3be8f62726599b3033cc262edc2c7e429909b3ac599fc AS runtime
 WORKDIR /opt/resx
 ENV NODE_ENV=production
-COPY --from=builder --chown=node:node /opt/resx/dist dist
-COPY --from=builder --chown=node:node /opt/resx/node_modules node_modules
-COPY --from=builder --chown=node:node /opt/resx/bin bin
-USER node
+COPY --from=builder --chown=10001:10001 /opt/resx/dist dist
+COPY --from=builder --chown=10001:10001 /opt/resx/node_modules node_modules
+COPY --from=builder --chown=10001:10001 /opt/resx/bin bin
+USER 10001:10001
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:8080/health',{signal:AbortSignal.timeout(4000)}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
