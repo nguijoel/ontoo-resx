@@ -11,9 +11,11 @@ Status: Remediation pending; this increment does not certify the inherited index
 | Category | Scope | Purpose |
 |---|---|---|
 | G01 | api/src/**, webapp/src/** (excluding generated output) | Maintained application source |
-| G09 | bin/resx-phase1.cjs, bin/resx-phase1-profile.cjs | Dedicated local PRE connection tooling |
-| G05 | bin/resx-phase1.test.cjs | Deterministic profile and TLS test implementation |
-| G06 | docs/resx-phase1-local.md, docs/governance/GIT-TRACKING-POLICY.md | Maintained application operating contract and local manifest |
+| G09 | bin/resx-phase1.cjs, bin/resx-phase1-profile.cjs, bin/resx-runtime.cjs, bin/resx-runtime-profile.cjs | Dedicated isolated runtime tooling |
+| G05 | bin/resx-phase1.test.cjs, bin/resx-runtime.test.cjs | Deterministic profile and TLS test implementation |
+| G06 | docs/resx-phase1-local.md, docs/resx-hosted-runtime.md, docs/governance/GIT-TRACKING-POLICY.md | Maintained application operating contracts and local manifest |
+| G02 | deploy/resx/Dockerfile, deploy/resx/Dockerfile.dockerignore | Isolated hosted PRE build definition and context boundary |
+| G04 | webapp/angular.json | Existing frontend build configurations with dedicated preview target |
 
 Other inherited paths require repository-wide classification before new changes
 are staged there. This list grants no new canonical policy exceptions.

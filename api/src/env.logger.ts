@@ -1,7 +1,7 @@
 import { join } from 'path';
 // see https://github.com/motdotla/dotenv#how-do-i-use-dotenv-with-import
 import * as dotenv from 'dotenv';
-if (process.env.TR_RUNTIME_PROFILE !== 'resx-phase1') {
+if (!['resx-phase1', 'resx-hosted-pre', 'resx-local-dev'].includes(process.env.TR_RUNTIME_PROFILE)) {
   dotenv.config({ path: join(__dirname, '../../.env') });
 }
 

@@ -69,7 +69,10 @@ export const dataSourceOptions = (): DataSourceOptions => {
     namingStrategy: configDb.namingStrategy,
   };
 
-  if (process.env.TR_RUNTIME_PROFILE === 'resx-phase1') {
+  if (['resx-hosted-pre', 'resx-local-dev'].includes(process.env.TR_RUNTIME_PROFILE)) {
+    const profile = require(path.resolve(__dirname, '../../../bin/resx-runtime-profile.cjs'));
+    Object.assign(options, profile.databaseOptions(process.env));
+  } else if (process.env.TR_RUNTIME_PROFILE === 'resx-phase1') {
     const profile = require(path.resolve(__dirname, '../../../bin/resx-phase1-profile.cjs'));
     Object.assign(options, profile.databaseOptions(process.env));
   }
