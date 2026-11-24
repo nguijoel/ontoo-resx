@@ -17,10 +17,10 @@
   "priorGreetingReceiptSha256": "5858ded58f4f37a9cb90d6e04081056ce573abd39b009a8f0acf8c405e8bfbb5",
   "priorGreetingError": 1130,
   "filesSha256Lf": {
-    "resx-pre-socket-metadata.sql": "f3d6c58aeb51a2a078b2a8b922f6daa1652ed68660b3c715a9ad6bf579f180cc",
+    "resx-pre-socket-metadata.sql": "de4801b35ab46d9738fc63f00caeff06852efa563154c7f7698ba363f00d9de7",
     "resx-pre-locked-probe.sql": "e0320ef0e2dd06631a15551a6888e893bc2a13c07eb7935fb084ea13ab5996bd",
     "resx-pre-probe-validate.py": "475491fb2d6addc80d0d821334cf9327709329fb6fe9468e39c7de6dbb1c2ca0",
-    "resx-pre-probe-validate.test.py": "c739e21a7317b09451e13892a111aaaacc20ac92fba7bd7722b4fc2ede005edf"
+    "resx-pre-probe-validate.test.py": "91d9451defc0abf820bf9ab7aacb273ea4541f0b3330ab6c0368df939bbe7c2c"
   },
   "producerCorrection": {
     "priorSource": "3f6f7c38d40bcbc863f19811cd6966dd9777eee5",
@@ -30,6 +30,18 @@
     "onlyFields": ["secureTransport", "generalLog", "slowLog", "binaryLog", "localInfile"],
     "fix": "SELECT CASE maps native ON/1 to integer1 and OFF/0 to integer0; unknown values become NULL and fail the unchanged strict validator",
     "serverSettingsChanged": false,
+    "oldCaptureRepairedOrAccepted": false
+  },
+  "numericProjectionCorrection": {
+    "priorSource": "94badf9b9703438319f6f9550b20d05e4f4758b3",
+    "preservedRawCaptureSha256": "cd3ce83ffdb58e49d2ccbd9bada46cdd21ece9547e974a6ae396fc077fa82d4c",
+    "nativeExit": 0,
+    "observedDefect": "five predicate fields were JSON bool and five scalar COUNT fields JSON strings; unchanged validator requires integers",
+    "predicateFix": "CASE WHEN predicate THEN integer1 ELSE integer0; false or unknown expected-true flags fail unchanged validation",
+    "countFix": "explicit UNSIGNED cast outside each scalar subquery and at JSON projection boundaries",
+    "futureProbeProjection": "same exact host/lock/SSL/no-password/no-grant predicates with explicit integer types, connection-count cast and JSON_QUERY object wrapper; native postflight shape is not assumed before measured validation",
+    "serverSettingsOrAccountSqlChanged": false,
+    "strictValidatorChanged": false,
     "oldCaptureRepairedOrAccepted": false
   },
   "readOnlyFirst": {

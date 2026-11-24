@@ -35,4 +35,14 @@ class Tests(unittest.TestCase):
   for field in ('secureTransport','generalLog','slowLog','binaryLog','localInfile'):
    v=baseline();v[field]=None
    with self.assertRaises(ValueError):m.validate(raw(v))
+ def test_predicates_counts_and_future_probe_are_typed_at_json_projection_boundary(self):
+  sql=Path(__file__).with_name('resx-pre-socket-metadata.sql').read_text()
+  for key in ('mariadbVendor','rootLocal','sslCaConfigured','sslCertConfigured','sslKeyConfigured'):
+   self.assertIn("'"+key+"',CASE WHEN ",sql)
+  for key in ('nonlocalRootAccounts','otherResxAccounts','accountCountExcludingProbe','probeAccountCount','probeGrantRows','probeRoleRows'):
+   self.assertIn("'"+key+"',CAST((SELECT COUNT(*)",sql)
+  self.assertIn("'probe',JSON_QUERY((SELECT JSON_OBJECT(",sql)
+  self.assertIn("'maxUserConnections',CAST(u.max_user_connections AS UNSIGNED)",sql)
+  for key in ('locked','accessZero','requiresSsl','noPassword','noAlternateAuth'):
+   self.assertIn("'"+key+"',CASE WHEN ",sql)
 if __name__=='__main__':unittest.main()
