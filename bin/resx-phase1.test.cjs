@@ -18,15 +18,15 @@ before(() => {
   fs.writeFileSync(configFile, '[req]\ndistinguished_name=dn\n[dn]\n');
   execFileSync('openssl', ['req', '-config', configFile, '-x509', '-newkey', 'rsa:2048', '-nodes',
     '-keyout', keyFile, '-out', certFile, '-days', '1',
-    '-subj', '/CN=resx-pre-db.example.invalid',
-    '-addext', 'subjectAltName=DNS:resx-pre-db.example.invalid'],
+    '-subj', '/CN=localhost',
+    '-addext', 'subjectAltName=DNS:localhost,IP:127.0.0.1'],
   { stdio: 'ignore', windowsHide: true });
   cert = fs.readFileSync(certFile);
   key = fs.readFileSync(keyFile);
   input = {
     TR_DB_TYPE: 'mysql', TR_DB_DATABASE: 'ontoo_resx_pre',
-    TR_DB_HOST: 'resx-pre-db.example.invalid', TR_DB_TUNNEL_PORT: '13306',
-    TR_DB_CA_FILE: certFile, TR_DB_USER: 'test_runtime',
+    TR_DB_HOST: 'localhost', TR_DB_TUNNEL_PORT: '13306',
+    TR_DB_CA_FILE: certFile, TR_DB_USER: 'ontoo_resx_pre_runtime',
     TR_DB_PASSWORD: 'synthetic-only', TR_SECRET: 'synthetic-isolated-signing-secret-for-tests',
   };
 });
@@ -52,7 +52,9 @@ test('dedicated environment drops imported settings and locks startup controls',
 test('profile rejects wrong target, root account, invalid identity/CA/port and missing settings', () => {
   for (const edit of [
     { TR_DB_DATABASE: 'ontoo_resx_prod' }, { TR_DB_TYPE: 'mariadb' },
-    { TR_DB_USER: 'root' }, { TR_DB_HOST: '127.0.0.1' },
+    { TR_DB_USER: 'root' }, { TR_DB_USER: 'ontoo_resx_pre_restore' },
+    { TR_DB_USER: 'migrator' }, { TR_DB_HOST: '127.0.0.1' },
+    { TR_DB_HOST: 'localhost.evil.invalid' }, { TR_DB_HOST: 'resx-pre-db.example.invalid' },
     { TR_DB_CA_FILE: path.join(directory, 'absent.pem') },
     { TR_DB_TUNNEL_PORT: '0' }, { TR_DB_TUNNEL_PORT: '13306x' }, { TR_SECRET: '' },
   ]) assert.throws(() => profile.buildEnvironment({ ...input, ...edit }));
@@ -91,7 +93,7 @@ test('TypeORM receives mysql2 and verified TLS with no dotenv contamination or n
     const ds=new (require('typeorm').DataSource)(o);
     assert.equal(ds.driver.loadedConnectorPackage,'mysql2');
     const connection=ds.driver.createConnectionOptions(o,o);
-    assert.equal(connection.host,'resx-pre-db.example.invalid');
+    assert.equal(connection.host,'localhost');
     assert.equal(connection.stream,o.extra.stream);
     assert.equal(connection.ssl,o.ssl);
   `;
@@ -108,10 +110,13 @@ async function handshake(host, ca) {
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   let stream;
   try {
-    const env = profile.buildEnvironment({ ...input, TR_DB_HOST: host, TR_DB_TUNNEL_PORT: String(server.address().port) }, {});
+    const env = profile.buildEnvironment({ ...input, TR_DB_TUNNEL_PORT: String(server.address().port) }, {});
     const options = profile.databaseOptions(env);
     // Exercise the installed mysql2 TLS implementation, including its explicit
     // post-handshake hostname check, using the same profile stream/options.
+    // Inject a wrong identity only in this driver-level negative test;
+    // the production profile itself accepts exactly localhost.
+    options.host = host;
     if (ca !== undefined) options.ssl.ca = ca;
     stream = options.extra.stream();
     await new Promise((resolve, reject) => { stream.once('connect', resolve); stream.once('error', reject); });

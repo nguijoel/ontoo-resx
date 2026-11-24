@@ -6,6 +6,7 @@ const tls = require('node:tls');
 
 const PROFILE = 'resx-phase1';
 const DATABASE = 'ontoo_resx_pre';
+const RUNTIME_USER = 'ontoo_resx_pre_runtime';
 
 function required(input, key) {
   if (typeof input[key] !== 'string' || !input[key].trim()) {
@@ -18,14 +19,14 @@ function validate(input) {
   if (required(input, 'TR_DB_DATABASE') !== DATABASE) throw new Error('Phase-one database must be ontoo_resx_pre');
   if (required(input, 'TR_DB_TYPE') !== 'mysql') throw new Error('Phase-one database type must be mysql');
   const host = required(input, 'TR_DB_HOST');
-  if (net.isIP(host) || host.length > 253 || !/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/i.test(host) || !host.includes('.')) {
-    throw new Error('TR_DB_HOST must be the qualified DNS name in the database certificate');
+  if (host !== 'localhost') {
+    throw new Error('TR_DB_HOST must match the frozen PRE certificate identity: localhost');
   }
   const portText = required(input, 'TR_DB_TUNNEL_PORT');
   const port = Number(portText);
   if (!/^\d+$/.test(portText) || !Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid TR_DB_TUNNEL_PORT');
   const user = required(input, 'TR_DB_USER');
-  if (user === 'root') throw new Error('Phase one requires the isolated runtime account');
+  if (user !== RUNTIME_USER) throw new Error('Phase one requires the exact isolated PRE runtime account');
   required(input, 'TR_DB_PASSWORD');
   required(input, 'TR_SECRET');
   const caPath = required(input, 'TR_DB_CA_FILE');
@@ -104,4 +105,4 @@ function assertRuntimeEnvironment(env) {
   }
 }
 
-module.exports = { PROFILE, DATABASE, validate, buildEnvironment, databaseOptions, assertRuntimeEnvironment };
+module.exports = { PROFILE, DATABASE, RUNTIME_USER, validate, buildEnvironment, databaseOptions, assertRuntimeEnvironment };

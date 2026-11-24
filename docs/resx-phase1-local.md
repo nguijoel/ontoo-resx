@@ -29,17 +29,20 @@ Required names (values below are placeholders, not an issued connection):
 
     TR_DB_TYPE=mysql
     TR_DB_DATABASE=ontoo_resx_pre
-    TR_DB_HOST=certificate-dns-name.example.invalid
+    TR_DB_HOST=localhost
     TR_DB_TUNNEL_PORT=13306
     TR_DB_CA_FILE=C:/approved/path/database-ca.pem
-    TR_DB_USER=isolated_runtime_account
+    TR_DB_USER=ontoo_resx_pre_runtime
     TR_DB_PASSWORD=<custodian supplied>
     TR_SECRET=<isolated local signing secret>
 
-TR_DB_HOST is the database certificate identity, not the tunnel IP. The TCP
+TR_DB_HOST is fixed to localhost, matching Infrastructure's frozen leaf DNS SAN
+(the leaf also has IP SAN 127.0.0.1). Other host values are rejected. The TCP
 stream always connects to 127.0.0.1 at TR_DB_TUNNEL_PORT. mysql2 verifies the CA
 and certificate hostname, using TR_DB_HOST for SNI/identity without public DNS
-resolution. TLS has no insecure or plaintext fallback. The launcher does not
+resolution. The account is fixed to ontoo_resx_pre_runtime; restore/migrator/admin
+aliases are rejected. DBA must confirm this runtime account and grants in the
+qualified handoff before launch; this source contract does not create an account. TLS has no insecure or plaintext fallback. The launcher does not
 establish or authenticate SSH; Infrastructure owns that separate pinned tunnel.
 The application explicitly uses mysql2; MariaDB uses the application's mysql
 compatibility mode. Do not set TR_DB_TYPE=mariadb (unsupported by app helpers).

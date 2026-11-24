@@ -20,7 +20,7 @@ are staged there. This list grants no new canonical policy exceptions.
 
 ## Exclusions and evidence
 
-Central exclusions X01â€“X11 apply. Never stage live .env files, database archives,
+Central exclusions X01-X11 apply. Never stage live .env files, database archives,
 private keys, credentials, dependency installs, build output or execution evidence.
 Tests generate disposable certificates/private keys only in OS temp and remove
 their own temporary directory. Runtime profiles and real CA/custody files stay
