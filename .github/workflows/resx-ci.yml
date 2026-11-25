@@ -52,11 +52,22 @@ jobs:
           const c=require('./bin/resx-cicd.cjs');
           const event=JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH,'utf8'));
           if(event.pull_request)c.sourceRoute(event.pull_request);
+          const git=(...args)=>cp.execFileSync('git',args,{encoding:'utf8'}).trim();
+          const tree=sha=>git('rev-parse',sha+'^{tree}');
           let base=process.env.BASE_SHA;
-          if(!/^[a-f0-9]{40}$/.test(base||'')||/^0+$/.test(base))base=cp.execFileSync('git',['merge-base','origin/dev',process.env.HEAD_SHA],{encoding:'utf8'}).trim();
+          if(!/^[a-f0-9]{40}$/.test(base||'')||/^0+$/.test(base))base=git('rev-parse',process.env.HEAD_SHA+'^1');
           const files=c.changedFiles(base,process.env.HEAD_SHA);
-          // A dispatch on the integration tip may have no diff; still run full app validation.
-          const scope=files.length?c.classify(files):{protected:true,documentationOnly:false,fileCount:0};
+          let scope;
+          if(files.length)scope=c.classify(files);
+          else if(event.pull_request){
+            if(event.pull_request.base.ref!=='dev'||event.pull_request.head.ref!=='staging'||tree(base)!==tree(process.env.HEAD_SHA))throw Error('EMPTY_PR_REJECTED');
+            git('merge-base','--is-ancestor',base,process.env.HEAD_SHA);
+            scope={protected:false,documentationOnly:true,fileCount:0,ancestryOnly:true};
+          }else{
+            const parents=git('rev-list','--parents','-n','1',process.env.HEAD_SHA).split(' ').slice(1);
+            const noContentSync=parents.length===2&&parents.every(p=>tree(p)===tree(process.env.HEAD_SHA));
+            scope={protected:!noContentSync,documentationOnly:noContentSync,fileCount:0,ancestryOnly:noContentSync};
+          }
           fs.appendFileSync(process.env.GITHUB_OUTPUT,`documentation=${scope.documentationOnly}\n`);
           fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,JSON.stringify({source:process.env.HEAD_SHA,base,...scope})+'\nNative protected branches and CODEOWNERS remain the approval authority.\n');
           NODE

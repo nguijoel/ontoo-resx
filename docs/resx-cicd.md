@@ -165,3 +165,20 @@ Docker evaluator, archive/collector framework, HTTP/OIDC ingress and queue remai
 excluded. Preserve their inactive files/keys/evidence; do not start them or infer
 key revocation/deletion. Native Actions orchestrates; the existing controller
 retains the necessary deployment safety boundary.
+
+
+## Bootstrap PR and repeat-cycle reconciliation
+
+Normal App-authored [PR8](https://github.com/nguijoel/ontoo-resx/pull/8)
+replaces closed PR6 without discarding its feature ancestry. Initial head3faec860
+passed required pull-request validation run45692919326; that evidence does not
+cover later descendants. The bootstrap remains unmerged and requires authorised
+material review after final exact-head validation.
+
+Reconciliation recovers successful current-tip CI after enrollment without a
+manual workflow trigger. Equal-tree staging ancestry sync requires the exact
+merged promotion and second parent; an already-synced dev tip is a no-op.
+CI reuses application validation only for proven no-content ancestry changes.
+The repeat-cycle increment passed53 focused Node control tests and workflow
+YAML parsing, with independent bounded source review. These are source checks,
+not live promotion, deployment or rollback acceptance.

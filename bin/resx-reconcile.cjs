@@ -71,9 +71,26 @@ async function reconcile({ api, validatedRun, createPullRequest }) {
     stageCommit = await api('/git/commits/' + stage.object.sha);
   assert(SHA.test(devCommit.tree?.sha || '') && SHA.test(stageCommit.tree?.sha || ''));
   if (devCommit.tree.sha === stageCommit.tree.sha) {
-    if (dev.object.sha === stage.object.sha || validatedRun.head_branch !== 'staging') return;
+    if (dev.object.sha === stage.object.sha) return;
     const ancestry = await api('/compare/' + dev.object.sha + '...' + stage.object.sha);
+    if (ancestry.status === 'behind' && ancestry.merge_base_commit?.sha === stage.object.sha) return;
     assert(ancestry.status === 'ahead' && ancestry.merge_base_commit?.sha === dev.object.sha);
+    assert(stageCommit.parents?.length === 2 && stageCommit.parents[1].sha === dev.object.sha);
+    const promoted = await api('/commits/' + stage.object.sha + '/pulls?per_page=100', null, true);
+    const matches = promoted.filter(
+      p =>
+        p.merge_commit_sha === stage.object.sha && p.base?.ref === 'staging' && p.head?.ref === 'dev' && p.head.sha === dev.object.sha && p.merged_at,
+    );
+    assert(matches.length === 1);
+    const proof = await api('/pulls/' + matches[0].number);
+    assert(
+      proof.merged === true &&
+        proof.state === 'closed' &&
+        proof.merge_commit_sha === stage.object.sha &&
+        proof.head.sha === dev.object.sha &&
+        proof.head.repo?.id === REPOSITORY_ID &&
+        proof.base.repo?.id === REPOSITORY_ID,
+    );
     const sync = prs.filter(p => p.base.ref === 'dev' && p.head.ref === 'staging' && p.head.repo?.id === REPOSITORY_ID);
     assert(sync.length <= 1);
     if (!sync.length) {
@@ -220,6 +237,20 @@ function nativeCreator({ api, authoringApi }) {
     return result;
   };
 }
+async function latestValidatedTip(api) {
+  // Recover missed workflow_run edges after enrollment; never reuse an older
+  // green run when the newest attempt for that exact protected tip is failing.
+  for (const branch of ['dev', 'staging']) {
+    const sha = (await api('/git/ref/heads/' + branch)).object.sha;
+    assert(SHA.test(sha));
+    const rows = await api('/actions/workflows/resx-ci.yml/runs?branch=' + branch + '&head_sha=' + sha + '&per_page=100', null, 'workflow_runs');
+    const latest = rows
+      .filter(r => r.head_branch === branch && r.head_sha === sha && ['push', 'workflow_dispatch'].includes(r.event))
+      .sort((a, b) => b.id - a.id)[0];
+    if (latest?.status === 'completed' && latest.conclusion === 'success') return latest;
+  }
+  return null;
+}
 async function openFeature({ api, run, createPullRequest }) {
   if (!run || run.conclusion !== 'success' || run.event !== 'push' || !/^codex\/[a-z0-9][a-z0-9._/-]{0,100}$/i.test(run.head_branch || '')) return;
   assert(run.repository?.id === REPOSITORY_ID && SHA.test(run.head_sha));
@@ -302,7 +333,7 @@ async function main() {
       checkApi: (path, body, method) => request(riskToken, path, body, undefined, method),
       pulls: await api('/pulls?state=open&per_page=100', null, true),
     });
-  await reconcile({ api, validatedRun: event.workflow_run, createPullRequest });
+  await reconcile({ api, validatedRun: await latestValidatedTip(api), createPullRequest });
   await openFeature({ api, run: event.workflow_run, createPullRequest });
   await recoverMergeHandoff({
     api,
@@ -316,4 +347,4 @@ if (require.main === module)
     console.error('RESX_RECONCILIATION_REJECTED');
     process.exitCode = 1;
   });
-module.exports = { successful, reconcile, recoverMergeHandoff, nativeCreator, openFeature };
+module.exports = { successful, reconcile, recoverMergeHandoff, nativeCreator, openFeature, latestValidatedTip };

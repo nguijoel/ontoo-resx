@@ -218,3 +218,27 @@ test('failure of final live inventory leaves pending admission, never reuses ear
   assert.equal(sent.length, 1);
   assert.equal(sent[0].status, 'in_progress');
 });
+
+test('exact current staging-to-dev tree-only sync needs no human but rejects changed tree or moved source', async () => {
+  const p = pr();
+  p.changed_files = 0;
+  p.head.ref = 'staging';
+  let badTree = false,
+    moved = false;
+  const api = async path =>
+    path.startsWith('/git/ref/heads/')
+      ? { object: { sha: path.endsWith('/dev') ? p.base.sha : moved ? 'f'.repeat(40) : HEAD } }
+      : path.includes('/files?')
+        ? []
+        : path.startsWith('/git/commits/')
+          ? { sha: path.split('/').at(-1), parents: [], tree: { sha: badTree && path.endsWith(HEAD) ? 'e'.repeat(40) : TREE } }
+          : path.startsWith('/compare/')
+            ? { status: 'ahead', merge_base_commit: { sha: p.base.sha } }
+            : Promise.reject(Error('unexpected'));
+  assert.equal((await risk.evaluate(api, p)).ancestryOnly, true);
+  badTree = true;
+  await assert.rejects(risk.evaluate(api, p));
+  badTree = false;
+  moved = true;
+  await assert.rejects(risk.evaluate(api, p));
+});

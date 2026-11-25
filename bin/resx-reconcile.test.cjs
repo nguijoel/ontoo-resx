@@ -55,6 +55,16 @@ function fixture(prs = []) {
       if (path === '/git/ref/heads/staging') return { object: { sha: old } };
       if (path.startsWith('/pulls?')) return prs;
       if (path.startsWith('/actions/workflows/')) return { path: '.github/workflows/resx-ci.yml' };
+      if (path === '/commits/' + old + '/pulls?per_page=100')
+        return [{ number: 11, merge_commit_sha: old, merged_at: '2026-11-25', base: { ref: 'staging' }, head: { ref: 'dev', sha: head } }];
+      if (path === '/pulls/11')
+        return {
+          merged: true,
+          state: 'closed',
+          merge_commit_sha: old,
+          base: { ref: 'staging', repo: { id: 795522855 } },
+          head: { sha: head, repo: { id: 795522855 } },
+        };
       if (path.startsWith('/git/commits/')) return { tree: { sha: path.endsWith(head) ? 'c'.repeat(40) : 'd'.repeat(40) } };
       if (path.startsWith('/compare/')) return { status: 'ahead', merge_base_commit: { sha: old } };
       throw Error('unexpected fixed path');
@@ -87,7 +97,7 @@ test('native staging merge receives a no-content ancestry sync, not an endless p
   const f = fixture();
   const original = f.api;
   f.api = async (path, body, ...rest) => {
-    if (path.startsWith('/git/commits/')) return { tree: { sha: 'c'.repeat(40) } };
+    if (path.startsWith('/git/commits/')) return { tree: { sha: 'c'.repeat(40) }, parents: [{ sha: 'f'.repeat(40) }, { sha: head }] };
     if (path.startsWith('/compare/')) return { status: 'ahead', merge_base_commit: { sha: head } };
     return original(path, body, ...rest);
   };
@@ -304,7 +314,7 @@ test('promotion and ancestry sync preserve original selected refs before native 
         if (path === '/git/ref/heads/dev') return { object: { sha: ++devReads > 1 && moved === (sync ? 'base' : 'head') ? 'e'.repeat(40) : head } };
         if (path === '/git/ref/heads/staging')
           return { object: { sha: ++stageReads > 1 && moved === (sync ? 'head' : 'base') ? 'e'.repeat(40) : old } };
-        if (sync && path.startsWith('/git/commits/')) return { tree: { sha: 'c'.repeat(40) } };
+        if (sync && path.startsWith('/git/commits/')) return { tree: { sha: 'c'.repeat(40) }, parents: [{ sha: 'f'.repeat(40) }, { sha: head }] };
         if (sync && path.startsWith('/compare/')) return { status: 'ahead', merge_base_commit: { sha: head } };
         return original(path, ...args);
       };
@@ -374,4 +384,48 @@ test('App-authored feature PR opens automatically only from exact successful WIP
     },
   });
   assert.equal(writes, 1);
+});
+
+test('enrollment recovers already-successful current-tip CI without a manual dispatch edge', async () => {
+  const { latestValidatedTip } = require('./resx-reconcile.cjs'),
+    f = fixture(),
+    original = f.api;
+  f.api = async (path, ...args) =>
+    path.includes('/runs?') ? (path.includes('branch=dev') ? [{ ...run, event: 'push', status: 'completed' }] : []) : original(path, ...args);
+  await reconcile({ ...f, validatedRun: await latestValidatedTip(f.api) });
+  assert.equal(f.calls.filter(x => x.path === '/pulls' && x.body).length, 1);
+  const api = async (path, ...args) =>
+    path.includes('/runs?')
+      ? path.includes('branch=dev')
+        ? [
+            { ...run, event: 'push', status: 'completed' },
+            { ...run, id: 2, event: 'workflow_dispatch', status: 'completed', conclusion: 'failure' },
+          ]
+        : []
+      : original(path, ...args);
+  assert.equal(await latestValidatedTip(api), null);
+});
+test('exact reviewed staging merge can sync from validated dev without suppressed staging push CI', async () => {
+  const f = fixture(),
+    original = f.api;
+  f.api = async (path, ...args) =>
+    path.startsWith('/git/commits/')
+      ? { tree: { sha: 'c'.repeat(40) }, parents: [{ sha: 'f'.repeat(40) }, { sha: head }] }
+      : path.startsWith('/compare/')
+        ? { status: 'ahead', merge_base_commit: { sha: head } }
+        : original(path, ...args);
+  await reconcile({ ...f, validatedRun: run });
+  assert.equal(f.calls.find(x => x.path === '/pulls' && x.body).body.head, 'staging');
+});
+test('already-synced identical trees are a no-op, not another promotion or sync', async () => {
+  const f = fixture(),
+    original = f.api;
+  f.api = async (path, ...args) =>
+    path.startsWith('/git/commits/')
+      ? { tree: { sha: 'c'.repeat(40) } }
+      : path.startsWith('/compare/')
+        ? { status: 'behind', merge_base_commit: { sha: old } }
+        : original(path, ...args);
+  await reconcile({ ...f, validatedRun: run });
+  assert.equal(f.calls.filter(x => x.body).length, 0);
 });
