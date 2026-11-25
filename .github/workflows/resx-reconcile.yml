@@ -1,13 +1,13 @@
 name: RESX protected merge and promotion
 on:
   workflow_run:
-    workflows: ['RESX validation']
+    workflows: ['RESX validation', 'RESX fast feedback']
     types: [completed]
   pull_request_target:
     branches: [dev, staging]
-    types: [ready_for_review, reopened]
-  check_run:
-    types: [completed]
+    types: [opened, synchronize, ready_for_review, reopened, edited, converted_to_draft]
+  pull_request_review:
+    types: [submitted, edited, dismissed]
   workflow_dispatch:
   schedule:
     - cron: '*/5 * * * *'
@@ -16,6 +16,23 @@ concurrency:
   group: resx-protected-reconcile
   cancel-in-progress: false
 jobs:
+  review-event:
+    if: github.event_name == 'pull_request_review' && github.repository == 'nguijoel/ontoo-resx'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      actions: write
+    steps:
+      - name: Reconcile review changes through trusted dev controls
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node <<'NODE'
+          (async()=>{const r=await fetch('https://api.github.com/repos/nguijoel/ontoo-resx/actions/workflows/resx-reconcile.yml/dispatches',{
+            method:'POST',headers:{Authorization:'Bearer '+process.env.GH_TOKEN,'Content-Type':'application/json'},
+            body:JSON.stringify({ref:'dev'}),redirect:'error',signal:AbortSignal.timeout(20000)});
+            if(r.status!==204)throw Error();})().catch(()=>{console.error('REVIEW_RECONCILIATION_UNCONFIRMED');process.exitCode=1;});
+          NODE
   reconcile:
     if: github.ref == 'refs/heads/dev' && github.repository == 'nguijoel/ontoo-resx' && vars.RESX_AUTHORING_ENROLLED == 'true'
     runs-on: ubuntu-24.04
@@ -62,10 +79,31 @@ jobs:
               'App 5891355; installation 185090623; token repository 795522855; contents read / PR write; job-end revocation enabled.\n');
           })().catch(()=>{console.error('APP_SCOPE_REJECTED');process.exitCode=1;});
           NODE
+      - name: Mint isolated risk-check token
+        if: vars.RESX_RISK_ENROLLED == 'true'
+        id: risk
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: Iv23liPljIg7kku5IYRk
+          private-key: ${{ secrets.ONTOO_RESX_RISK_APP_PRIVATE_KEY }}
+          owner: nguijoel
+          repositories: ontoo-resx
+          permission-checks: write
+          permission-metadata: read
+      - name: Verify risk-check issuer
+        if: vars.RESX_RISK_ENROLLED == 'true'
+        env:
+          APP_SLUG: ${{ steps.risk.outputs.app-slug }}
+          INSTALLATION_ID: ${{ steps.risk.outputs.installation-id }}
+        run: |
+          test "$APP_SLUG" = ontoo-release-evaluator
+          test "$INSTALLATION_ID" = 185732896
+          echo 'Risk issuer App5919556/install185732896; token scoped to RESX Checks write/Metadata read; job-end revocation enabled.' >> "$GITHUB_STEP_SUMMARY"
       - name: Reconcile exact protected source
         env:
           GH_TOKEN: ${{ github.token }}
           GH_APP_TOKEN: ${{ steps.app.outputs.token }}
+          GH_RISK_TOKEN: ${{ steps.risk.outputs.token }}
           RESX_AUTOMATION_ACTOR_ID: ${{ vars.RESX_AUTOMATION_ACTOR_ID }}
           RESX_PRE_ENROLLED: ${{ vars.RESX_PRE_ENROLLED }}
         run: node bin/resx-reconcile.cjs

@@ -2,17 +2,29 @@
 // Trusted default-branch orchestration only. Never execute a PR checkout here.
 const { REPOSITORY, REPOSITORY_ID } = require('./resx-cicd.cjs');
 const CI_APP = 15368;
+const risk = require('./resx-risk.cjs');
 const SHA = /^[a-f0-9]{40}$/;
 function assert(v) {
   if (!v) throw Error('RESX_RECONCILIATION_REJECTED');
 }
-function successful(checks, sha) {
+function successful(checks, sha, branch) {
   const latest = checks.filter(c => c.name === 'RESX CI' && c.app?.id === CI_APP && c.head_sha === sha).sort((a, b) => b.id - a.id)[0];
-  return latest?.status === 'completed' && latest.conclusion === 'success';
+  const proof = checks
+    .filter(c => c.name === 'RESX risk admission ' + branch && c.app?.id === 5919556 && c.head_sha === sha)
+    .sort((a, b) => b.id - a.id)[0];
+  return latest?.status === 'completed' && latest.conclusion === 'success' && proof?.status === 'completed' && proof.conclusion === 'success';
 }
 async function reconcile({ api, validatedRun, createPullRequest }) {
   const repo = await api('');
-  assert(repo.id === REPOSITORY_ID && repo.full_name === REPOSITORY && repo.default_branch === 'dev' && repo.allow_auto_merge === true);
+  assert(
+    repo.id === REPOSITORY_ID &&
+      repo.full_name === REPOSITORY &&
+      repo.default_branch === 'dev' &&
+      repo.allow_auto_merge === true &&
+      repo.allow_merge_commit === true &&
+      repo.allow_squash_merge === false &&
+      repo.allow_rebase_merge === false,
+  );
   // Native merge enforcement is authoritative. Full rule settings are verified
   // by the configuration operator before enrollment, not via an Admin-scoped token.
   for (const branch of ['dev', 'staging']) assert((await api('/branches/' + branch)).protected === true);
@@ -25,11 +37,23 @@ async function reconcile({ api, validatedRun, createPullRequest }) {
     if (pr.draft || !['dev', 'staging'].includes(pr.base.ref) || pr.head.repo?.id !== REPOSITORY_ID) continue;
     if (pr.base.ref === 'staging' && (pr.head.ref !== 'dev' || pr.head.sha !== dev.object.sha)) continue;
     const checks = await api('/commits/' + pr.head.sha + '/check-runs?per_page=100', null, 'check_runs');
-    if (!successful(checks, pr.head.sha)) continue;
+    if (!successful(checks, pr.head.sha, pr.base.ref)) continue;
     const fresh = await api('/pulls/' + pr.number);
     if (fresh.head.sha !== pr.head.sha || fresh.draft || fresh.state !== 'open') continue;
     const currentBase = await api('/git/ref/heads/' + fresh.base.ref);
     if (currentBase.object.sha !== fresh.base.sha) continue;
+    try {
+      risk.bound(checks, fresh, await api('/pulls?state=open&per_page=100', null, true));
+    } catch {
+      continue;
+    }
+    // Re-read live review/source evidence after CI, immediately before arming.
+    try {
+      await risk.evaluate(api, fresh);
+    } catch {
+      if (fresh.auto_merge) await api('/graphql-disable-auto-merge', { nodeId: fresh.node_id });
+      continue;
+    }
     // Do not arm a deferred merge while native conversations/checks are unresolved.
     if (fresh.mergeable !== true || fresh.mergeable_state !== 'clean') continue;
     // Native merge checks/reviews remain authoritative and are never bypassed.
@@ -149,7 +173,15 @@ function nativeCreator({ api, authoringApi }) {
   return async pr => {
     assert(pr?.draft === false && typeof pr.title === 'string' && pr.title.length > 0 && pr.title.length <= 200);
     assert(typeof pr.body === 'string' && Buffer.byteLength(pr.body) <= 16000);
-    assert((pr.head === 'dev' && pr.base === 'staging') || (pr.head === 'staging' && pr.base === 'dev'));
+    assert(
+      (pr.head === 'dev' && pr.base === 'staging') ||
+        (pr.head === 'staging' && pr.base === 'dev') ||
+        (pr.base === 'dev' &&
+          /^codex\/[a-z0-9][a-z0-9._/-]{0,100}$/i.test(pr.head) &&
+          !pr.head.includes('..') &&
+          !pr.head.includes('//') &&
+          !pr.head.endsWith('/')),
+    );
     assert(SHA.test(pr.expectedHeadSha || '') && SHA.test(pr.expectedBaseSha || ''));
     assert((await api('/git/ref/heads/' + pr.head)).object.sha === pr.expectedHeadSha);
     assert((await api('/git/ref/heads/' + pr.base)).object.sha === pr.expectedBaseSha);
@@ -188,15 +220,40 @@ function nativeCreator({ api, authoringApi }) {
     return result;
   };
 }
+async function openFeature({ api, run, createPullRequest }) {
+  if (!run || run.conclusion !== 'success' || run.event !== 'push' || !/^codex\/[a-z0-9][a-z0-9._/-]{0,100}$/i.test(run.head_branch || '')) return;
+  assert(run.repository?.id === REPOSITORY_ID && SHA.test(run.head_sha));
+  assert((await api('/actions/workflows/' + run.workflow_id)).path === '.github/workflows/resx-fast.yml');
+  if ((await api('/git/ref/heads/' + run.head_branch)).object.sha !== run.head_sha) return;
+  const base = (await api('/git/ref/heads/dev')).object.sha;
+  const prs = await api('/pulls?state=open&per_page=100', null, true);
+  const existing = prs.filter(p => p.base.ref === 'dev' && p.head.ref === run.head_branch && p.head.repo?.id === REPOSITORY_ID);
+  assert(existing.length <= 1);
+  if (existing.length) return;
+  assert(typeof createPullRequest === 'function');
+  await createPullRequest({
+    head: run.head_branch,
+    base: 'dev',
+    expectedHeadSha: run.head_sha,
+    expectedBaseSha: base,
+    draft: false,
+    title: 'Integrate validated ' + run.head_branch,
+    body:
+      'Automatic App-authored PR after WIP feedback run ' +
+      run.id +
+      '. Normal pull_request CI and trusted risk admission remain mandatory; WIP feedback is not merge approval.',
+  });
+}
 async function main() {
   const fs = require('node:fs');
   assert(process.env.GITHUB_REPOSITORY === REPOSITORY && process.env.GITHUB_REF === 'refs/heads/dev');
   const token = process.env.GH_TOKEN,
-    authoringToken = process.env.GH_APP_TOKEN;
+    authoringToken = process.env.GH_APP_TOKEN,
+    riskToken = process.env.GH_RISK_TOKEN;
   assert(token);
   const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
   if (event.workflow_run && event.workflow_run.conclusion !== 'success') return;
-  const request = async (authToken, path, body, pagination) => {
+  const request = async (authToken, path, body, pagination, method) => {
     if (path === '/graphql-enable-auto-merge' || path === '/graphql-disable-auto-merge') {
       const r = await fetch('https://api.github.com/graphql', {
         method: 'POST',
@@ -220,7 +277,7 @@ async function main() {
     for (let page = 1; page <= 30; page++) {
       const suffix = pagination ? (path.includes('?') ? '&' : '?') + 'page=' + page : '';
       const r = await fetch('https://api.github.com/repos/' + REPOSITORY + path + suffix, {
-        method: body ? 'POST' : 'GET',
+        method: method || (body ? 'POST' : 'GET'),
         headers: { Authorization: 'Bearer ' + authToken, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' },
         body: body ? JSON.stringify(body) : undefined,
         redirect: 'error',
@@ -239,7 +296,14 @@ async function main() {
   };
   const api = (path, body, pagination) => request(token, path, body, pagination);
   const createPullRequest = authoringToken ? nativeCreator({ api, authoringApi: (path, body) => request(authoringToken, path, body) }) : undefined;
+  if (riskToken)
+    await risk.publish({
+      api,
+      checkApi: (path, body, method) => request(riskToken, path, body, undefined, method),
+      pulls: await api('/pulls?state=open&per_page=100', null, true),
+    });
   await reconcile({ api, validatedRun: event.workflow_run, createPullRequest });
+  await openFeature({ api, run: event.workflow_run, createPullRequest });
   await recoverMergeHandoff({
     api,
     automationActorId: Number(process.env.RESX_AUTOMATION_ACTOR_ID),
@@ -252,4 +316,4 @@ if (require.main === module)
     console.error('RESX_RECONCILIATION_REJECTED');
     process.exitCode = 1;
   });
-module.exports = { successful, reconcile, recoverMergeHandoff, nativeCreator };
+module.exports = { successful, reconcile, recoverMergeHandoff, nativeCreator, openFeature };

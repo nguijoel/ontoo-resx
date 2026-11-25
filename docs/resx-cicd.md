@@ -1,209 +1,160 @@
-# ONTOO GitHub-native CI/CD — RESX first enrollment
+# ONTOO native CI/CD - RESX first enrollment
 
-Status: source integration in progress; not activated. Updated 25 November 2026.
-The owner's simplified GOV-CICD-001 approval supersedes the earlier custom-service
-architecture. This is a reusable baseline with repository-specific review,
-configuration and deployment bindings. PROD is excluded.
+Status: implementation and enrollment in progress; no live acceptance claimed.
+Updated 25 November 2026. PROD is excluded. The latest owner instruction requires
+first automated deployment, repeat deployment and explicit rollback/recovery as
+one deliverable; it supersedes the earlier deferral of those proofs.
 
-## Selected pipeline
+## Native delivery and trust boundary
 
-1. Native pull-request Actions validate source, application and Linux image inputs.
-   `RESX CI` is the required aggregate check, bound to GitHub Actions App15368.
-2. Native protected branches enforce checks, conversations, stale-review dismissal,
-   code-owner review, admin enforcement and no force pushes/deletions. Native
-   auto-merge waits for these protections; automation never submits an approval.
-3. A trusted dev-only job uses the existing `ontoo-development` App5891355 to
-   create a dev-to-staging promotion PR after the exact current dev CI succeeds.
-   It checks selected head/base SHAs again before posting and verifies the returned
-   PR. Normal pull_request CI runs on the App-authored PR.
-4. The staging workflow builds and publishes to `ghcr.io/nguijoel/ontoo-resx`.
-   Release identity binds repository/source/run/attempt, immutable registry manifest
-   digest and image configuration ID. Tags alone cannot authorize deployment.
-5. A narrowly authenticated connection invokes the existing Contabo controller.
-   The controller retains physical-target/configuration/DB compatibility checks,
-   global host locking, source/config semantic idempotency, health checks, retained
-   compatible rollback and durable audit receipts. This connection is not yet
-   integrated. The old HTTPS/OIDC request has been removed. The deployment job deliberately
-   fails closed until the controller transport is integrated; publication alone
-   cannot report a deployed release.
+- A successful WIP push on codex/** automatically opens an App-authored PR through
+  the trusted dev workflow. No human PR-creation or workflow trigger is needed.
+  WIP feedback never substitutes for full normal pull_request CI.
+- RESX CI (Actions App15368) validates source, application and Linux image inputs.
+  Native branch protections require it, enforce admins/conversations and reject
+  force pushes/deletion. MERGE-only is now configured; squash/rebase are disabled
+  so merged source, parents and approval provenance remain unambiguous.
+- The trusted dev Actions job publishes risk checks using a separately scoped
+  existing RESX-only Checks-write App, subject to the pending key-custody approval.
+  This is a native job, not an evaluator/publisher/watchdog service. Binding the
+  required context to its specific App prevents candidate Actions code from
+  forging a same-name success through shared Actions App15368.
+- Dev material/unknown paths retain native code-owner human review. Routine paths
+  are explicitly delegated, never inferred from a label or caller boolean. The
+  initial routine app envelope is search.component.css: the search-icon font size
+  1.25rem or 1.375rem, optionally line-height:1. README/CHANGELOG modifications are
+  prose exceptions. Added/removed/renamed delegated files or CSS outside this
+  envelope fail closed; change the owned policy first. All other source remains
+  material until a governed classification change explicitly delegates it.
+- Staging accepts only the current dev tip. Its required signed check walks exact
+  native merged dev PR parents, classifies complete diffs and verifies authorised
+  independent human reviews of each material source head. The review ID, reviewer
+  ID and commit SHA are retained in the machine record. Routine source needs no
+  human approval. This carries dev approval forward without a second human review
+  or a fake bot review. Unknown provenance is rejected.
+- The initial historical source boundary is explicitly edbf651e8c7fdb6b51f5e8635b4f681f0ce25f82,
+  tree d3d6602900bd5f72a7d24dc753a47ac2252de63e, parent/staging
+  ed287c2c10ca9c14a151c862a891de968334d210. It is enrolled by the normal human-reviewed
+  control bootstrap; the implementation never claims historical PR2 had a review.
+- Auto-merge requires CI, the signed exact-head/base/PR-set risk binding and fresh
+  live evidence. Review-event reconciliation marks risk admission pending before
+  reads, patches its conclusion and disarms invalid merges. API/evidence failure
+  leaves non-success. GitHub review events are asynchronous: this is an observed
+  admission snapshot, not a claim of instantaneous distributed revocation.
+- Successful current dev CI automatically creates the dev-to-staging PR. Exact-tree
+  ancestry sync prevents repeated merge cycles from drifting; it is itself proven
+  to change no content. Explicit dispatch recovery bridges GITHUB_TOKEN-suppressed
+  push events without treating dispatch as PR approval. Failed/unknown attempts
+  are preserved rather than blindly retried.
 
-Native branch merge commits are preserved. The existing exact-tree ancestry-sync
-PR path prevents repeated promotion cycles from becoming an unexplained divergent
-branch write. Hosted ancestry-only PR behavior remains unverified. Dispatch
-recovery bridges token-suppressed merge events; dispatch is scheduling, never PR
-approval or deployment authorization. Failed or uncertain executions require
-reconciliation rather than an automatic retry.
+## Enrollment and risk-based native rules
 
-## Credential and review boundary
+Actual GitHub readback: both dev and staging currently require one human review,
+code-owner review and stale dismissal, with strict RESX CI/App15368 and all other
+protections retained. This conservative enrollment state remains until the
+reviewed controls and isolated signed check are installed and qualified.
 
-Infrastructure provisions `ONTOO_DEVELOPMENT_APP_PRIVATE_KEY` only in the
-`resx-ci-authoring` environment, restricted to selected branch `dev` (not every
-protected branch). Verify actual installation185090623 membership/permissions
-before setting `RESX_AUTHORING_ENROLLED=true`. Fresh read-only GitHub installation metadata requests returned HTTP403 on
-25 November; this proves insufficient metadata access, not absent membership.
-Historical installation records do not include RESX795522855; adding that repository requires explicit approval if
-fresh verification confirms it is absent. No repository or permission expansion
-has been performed by this increment.
+Final dev rules: global approval count0, native code-owner review ON, stale
+approval dismissal ON, strict required RESX CI/App15368 and
+RESX risk admission dev/App5919556, existing admin/conversation/no-force/no-delete
+controls unchanged. CODEOWNERS fallback owns unknown/material paths; only the
+explicit routine leaves above are ownerless.
 
-The pinned official create-github-app-token action requests only ontoo-resx,
-Contents read and Pull requests write; tokens expire within one hour and the
-post-job action revokes them. Public App/installation/repository IDs and permission
-intent are recorded in the job summary. Never log the key/token. The App key
-itself can access the App's installation scope; token narrowing does not narrow
-that key. The trusted job checks out dev only and never installs dependencies or
-executes PR code. Protect its workflow, helper scripts and CODEOWNERS themselves.
-Environment secrets do not natively allowlist individual workflow files: selected
-branch restrictions plus required review of all workflow/control changes provide
-that boundary. Do not provision this secret before those rules are established.
+Final staging rules: global approval count0, no repeated native code-owner review,
+strict RESX CI/App15368 and RESX risk admission staging/App5919556. The latter
+requires exact already-approved dev provenance. This replaces a duplicate manual
+review with a mandatory nonforgeable check; no actor bypass is granted. Do not
+apply these final rules before the signed issuer/proof is operational.
 
-CODEOWNERS starts conservatively: unknown paths, runtime code, configuration,
-workflows and governance require @nguijoel review; only ordinary top-level
-README/CHANGELOG prose is checks-only. This still allows native auto-merge after
-required review. Review ownership can be narrowed later through a governed change.
-An author cannot approve their own PR; App-authored control/promotion PRs allow
-an authorized independent human review. Agent technical review is not that approval.
+## Credentials and actual enrollment evidence
 
-## Enrollment readiness evidence (25 November)
+- ontoo-development App5891355/install185090623 now selects exactly RESX795522855
+  plus its five pre-existing repositories. Infrastructure verified the actual
+  addition; Contents read/Metadata read/PR write permissions were preserved.
+- resx-ci-authoring environment28557619890 is configured for selected dev BRANCH
+  only, no tags or routine environment approval. The existing App key is destined
+  for ONTOO_DEVELOPMENT_APP_PRIVATE_KEY. Automatic approval review blocked the
+  precise key export before execution; Infrastructure has requested explicit
+  destination authorisation. No overwrite/retry or proxy export is permitted.
+- The official create-github-app-token action is pinned to v3.2.0 commit
+  bcd2ba49218906704ab6c1aa796996da409d3eb1. The authoring token names ONLY ontoo-resx,
+  Contents read/PR write; the risk token is ONLY Checks write/Metadata read for
+  that repository. Tokens are short-lived and revoked by post-job actions. Public
+  installation/scope IDs are audited; keys/tokens are never logged.
+- Reusing existing repo-only App5919556 in this protected native job is a separate
+  pending Actions key-custody decision. It adds no App, permission, repository or
+  service. The existing standalone service files remain inactive/excluded.
+- Neither trusted job executes candidate code or installs candidate packages.
+  Branch-only environment restrictions plus owned workflow/helper files protect
+  secret access; GitHub environments do not allowlist individual workflow files.
 
-Native GitHub readback now confirms both dev and staging require one human
-approval, code-owner review and stale-review dismissal. Strict RESX CI/App15368,
-admin enforcement, conversation resolution and no-force/no-delete controls were
-preserved. This deliberately keeps every PR under review during enrollment,
-including currently ownerless prose. No merge or auto-merge operation was run.
+## GHCR and existing-controller integration
 
-The `resx-ci-authoring` environment now exists (ID28557619890), with a custom
-branch policy allowing only `dev` of type `branch`; tags are not allowed. No App
-secret was provisioned by Deploy. The workflow/control increment is not yet installed on the protected bases;
-creation of the environment does not make unmerged workflow source trusted.
+The staging build publishes ghcr.io/nguijoel/ontoo-resx and binds the seven-field
+receipt: repositoryId, sourceSha, runId, runAttempt, registryRepository,
+registryManifestDigest and imageId. The canonical JSON SHA256 is releaseId.
+A tag alone is never admission evidence; manifest/index digest and image config ID
+are distinct and must be verified for linux/amd64.
 
-## Transition to risk-based review
+The immutable export also computes the App-reviewed database consumer closure:
+all regular api/src/** blobs plus API/root package and lock, API tsconfig, protected
+runtime/profile files and Docker/build-input definitions. Sorted path/byte hashes
+and exact selection rules define its fingerprint; source SHA is bound separately,
+so a CSS-only change reuses the accepted DB ABI. Image label
+com.ontoo.resx.db-closure-sha256 carries it. Frozen runtime qualification checks
+mysql2 3.14.0 and TypeORM0.3.28, not semver declarations alone.
 
-Keep the one-review enrollment rule until the reviewed CODEOWNERS/control files
-are installed on BOTH dev and staging, GitHub reports no CODEOWNERS syntax or
-owner-access errors, and an operator reads back the required CI/review rules.
-The risk-based ownership change itself is governance and requires authorised
-approval; it must not be self-approved by automation.
+Actual source71a76cd closure97ce6c28239cbb03519c3c467e37d7556a1f8ee9487595df895749a9b110f791
+covers116 files, selection3738996d9eddeb7e47570aef0b12ad187cbcce809093cd155ebf71e286d0c885.
+This is not a schema digest. DBA owns the complete protected native descriptor and
+compatibility baseline. Known pre-existing limits remain explicit: label.color
+native7 versus entity8 only certifies values fitting7; translation.value native
+mediumtext is not permission to shrink/migrate it to entity text. No automatic
+DDL, migrations, seeding, repair or data rollback is permitted.
 
-Then use native CODEOWNERS with `* @nguijoel` as the fallback and explicit,
-app-owner-reviewed ownerless entries for named routine UI/prose files. Initial
-app-owner proposal is only `/webapp/src/app/shared/components/search/search.component.css`
-plus `/README.md` and `/CHANGELOG.md`. The current CSS file is a single search-icon
-font-size rule; adjacent TypeScript/templates remain owned. This proposal is NOT
-installed or exempted by this record. A future CSS/prose path exemption delegates
-risk for its future contents; it is not a semantic guarantee. Review its permitted
-scope explicitly before adopting it, and retain ownership if that scope is unclear.
+The owner approved a dedicated restricted RESX-PRE SSH identity and Infrastructure
+custody. Fresh host readback found no existing unattended transport. The source
+client uses ontoo-resx-pre-deploy@185.189.0.51, pinned Ed25519 fingerprint
+SHA256:5kusMUREWU3SqjdhScMHqnokrqvi4WcLJ5tDCy2cHcI, no remote command, no passwords,
+agent/PTY/forwarding/general shell/Docker group or retries. A forced no-argument
+receiver selects only the fixed root RESX/PRE profile. Infrastructure provisions
+ONTOO_RESX_PRE_DEPLOY_SSH_KEY in staging-only hosting-pre; no private value is
+passed to the app, Git, artifacts or SSH child environment. Temporary key files
+are private and removed in finally.
 
-Do not exempt all api/src, webapp/src, docs or a file extension. All workflow/helper,
-governance, security/auth/tenant/permissions, infrastructure/container, DB
-migration/schema, runtime/environment/configuration, dependency/lock and unknown
-paths remain owned. New files remain material until classified through review.
-Apply material overrides after routine entries; GitHub uses the last matching
-case-sensitive pattern. CODEOWNERS itself always remains owned.
+Deploy input is exactly action+the seven-field receipt. Rollback input is only
+action+retained releaseId; the workflow restricts explicit rollback to authorised
+owner6606980. Root binds current/predecessor identity, allowed immutable image,
+source, config/runtime pair, DB ABI, budget, global lock, source/config idempotency,
+health, compatible retention and durable audit before mutation. It independently
+checks current protected source. The client requires an exact healthy terminal
+result and root receiptSha256, and retains only public request/sanitized result.
+A compensation ROLLED_BACK is deployment failure, not success. Explicit successful
+rollback reports action rollback/outcome UPDATED. Unknown outcomes are not retried.
 
-Only after that reviewed ownership policy is on both base branches, change the
-global required-approval count from one to zero, retaining mandatory code-owner
-review, stale dismissal, strict CI and every other existing protection. This is
-what allows routine-only PRs to merge without a human while mixed/material PRs
-still require an authorised code owner. Zero global approvals alone is not a
-risk policy. A PR author cannot approve their own material PR; an independent
-human or App-authored PR is required. Never use a bot approval as a substitute.
+Current shared controller is Media-qualified622cfcda1d6239515f31742e1ae4dd744e30f6eb90d29d034e625c5dbc010030;
+its existing-RESX update path still needs the selected adapter. Do not overwrite
+it with the historical first-install controller. No PRE enrollment flag may be
+activated until the SSH, controller and all release bindings are qualified.
 
-Source-risk mapping and representative routine/material/mixed/unknown/rename
-review checks must accompany that governance change; ordinary application code
-cannot downgrade its own protection through labels or caller booleans. Keep the
-current conservative rule if ownership coverage is incomplete. This transition
-is separate from PRE activation and does not require any deferred live release.
+The standing maximum300-second single-active PRE interruption/retained-recovery
+exception is pending owner disposition against GOV-CICD-001 continuity wording.
+No outage is authorised by assumption. The no-AWS profile/TR_SECRET stay paired
+with the predecessor; optional S3 enablement is a later protected config release.
+Smoke is GET-only, never POST login/push. Legacy2d749 has no runtime-info endpoint.
 
-## Controller transport decision (pending owner authorisation)
+## Acceptance state
 
-Fresh Infrastructure host metadata confirms there is no ontoo-deploy identity,
-installed forced-command receiver, deployment sudo policy or unattended Actions
-connection. The approved-releases directory exists but is not a delivery channel.
-Current shared controller is the Media-qualified lineage SHA256
-`622cfcda1d6239515f31742e1ae4dd744e30f6eb90d29d034e625c5dbc010030`;
-never overwrite it with the historical first-RESX controller.
+No first/repeat/rollback live proof has completed for this pipeline. Required
+live acceptance is now active, not deferred. Native control branch fast-feedback
+run45680652448 succeeded at831cbfa; this is not full required PR CI or deployment.
+Historical full source/app/image CI run45552017483 passed at637e86bf. New controls
+need their own exact-head required checks and normal material bootstrap review.
+PR6 remains closed/unmerged; its app feature ancestry is preserved for the single
+replacement release candidate. No new POC or product demo replaces that work.
 
-Smallest proposed boundary: one RESX-PRE-only noninteractive SSH identity and
-Infrastructure-custodied key, exposed only to a protected staging-only Actions
-job, with a pinned host key. The server forces a fixed receiver; no general
-shell, PTY, forwarding, agent, X11, user rc or Docker-group access. Any required
-privilege is limited to a no-argument fixed root admission command. The receiver
-must not execute SSH_ORIGINAL_COMMAND or caller-selected commands/paths.
-
-The existing receiver source needs a thin receipt-to-fixed-manifest admission
-adaptation: deploy carries the seven public image receipt fields and the host
-recomputes releaseId; rollback accepts only a retained compatible release ID.
-The host fixes RESX/PRE, target, configuration, DB compatibility, allowed GHCR
-repository/digest, resource bounds, global lock and audit custody. No secret or
-migration instruction is accepted from CI. No new HTTP service, OIDC ingress,
-collector, runner or durable queue is needed. Controller repeat/recovery logic
-must be wired through that entry; installing a key alone does not finish it.
-
-No new deployment identity/key/privilege has been provisioned. This is the exact
-new security boundary requiring owner authorisation; source/admission preparation
-can continue separately. PRE automation stays disabled and the three live release
-proofs remain deferred.
-
-## Minimum remaining integration
-
-- Verify existing App installation and repository access; Infrastructure provisions
-  the approved environment secret after branch/environment restrictions are set.
-- Integrate and review the native workflow/CODEOWNERS increment on the protected
-  base branches; enable code-owner review without removing existing CI protections.
-  The operator verifies the complete rule configuration before enrollment; the
-  workflow checks branches are protected and relies on native merge enforcement.
-  It does not call Administration-scoped protection-settings APIs or add that
-  permission to either token. Checks-only prose requires global approval count
-  zero alongside mandatory code-owner review; a positive global count requires
-  review for prose too.
-- Replace the staging deployment job's explicit fail-closed guard with the smallest
-  approved controller transport. Confirm the existing controller's repeat-release,
-  digest pull, configuration/DB bindings, semantic duplicate handling and receipts
-  are wired through that same path. This is unfinished integration, not an App
-  enrollment prerequisite.
-- Verify actual GHCR publication/read access and protected retention for current
-  plus previous releases; bind the controller's target/configuration/DB references.
-- Finish targeted static/security integration checks. No broad application suite
-  is required merely for the orchestration rewrite.
-
-Do not activate `RESX_PRE_ENROLLED` while transport/controller bindings are missing.
-No new PR is raised until the process is ready. PR6 stays closed and its source
-branch is preserved for the later replacement PR.
-
-## Deferred validation and current evidence
-
-The owner deferred first automated release, subsequent release, and explicit
-rollback/recovery live proofs. Implementation readiness is not end-to-end
-acceptance; no consolidated operational acceptance is claimed before those proofs.
-Healthy manual PRE at resx-preview.ontoo.cloud remains on source2d749120/imagebabcca8.
-The original no-AWS profile and TR_SECRET remain the first-release configuration;
-optional S3 enablement is a separate configuration release. Smoke uses GET only;
-never POST login/push. Original predecessor health checks do not require its
-nonexistent runtime-info endpoint.
-
-The native control branch was published without opening a PR at source831cbfa;
-fast-feedback run45680652448 completed successfully. This is branch control
-validation only, not a required PR check or deployment proof. Fresh repository
-variable readback found neither authoring nor PRE enrollment enabled.
-
-Historical actual hosted source/app/image CI succeeded on source637e86bf,
-Actions run45552017483. A failed required-check fixture and a draft fixture were
-rejected by GitHub merge controls, PR7 stayed unmerged. These do not qualify the
-new native source increment. Its focused local reconciler tests cover native rule
-presence, stale/failed CI, draft/no-op behavior, exact-head promotion and
-App-authoring ref races/unknown results; no live PR/secret/registry/host call occurs.
-
-## Removed architecture
-
-Custom authoring broker, eligibility evaluator/publisher/watchdog, Docker policy
-evaluator, archive collector and new HTTP/OIDC ingress/queue are outside the
-selected design. Their historical source/evidence and inactive host files/keys
-are preserved; no deletion, key revocation or activation is implied. Earlier
-architecture and detailed receipts remain in Git history and protected
-Infrastructure custody. The separately created evaluator App is not a dependency
-of this native pipeline.
-
-Native limitations: GITHUB_TOKEN-created events can suppress downstream workflows,
-so App-authored PRs and explicit dispatch recovery are used; GitHub concurrency
-is repository-scoped, so shared-host locking stays in the controller. GitHub does
-not provide a preconfigured trusted connection to this Contabo controller.
+The removed custom authoring broker, evaluator/publisher/watchdog services,
+Docker evaluator, archive/collector framework, HTTP/OIDC ingress and queue remain
+excluded. Preserve their inactive files/keys/evidence; do not start them or infer
+key revocation/deletion. Native Actions orchestrates; the existing controller
+retains the necessary deployment safety boundary.

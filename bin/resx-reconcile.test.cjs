@@ -8,13 +8,30 @@ const head = 'a'.repeat(40),
 function checks(branch) {
   return [
     { id: 1, name: 'RESX CI', head_sha: head, status: 'completed', conclusion: 'success', app: { id: 15368 } },
-    { id: 2, name: 'ONTOO policy eligibility ' + branch, head_sha: head, status: 'completed', conclusion: 'success', app: { id: policyApp } },
+    {
+      id: 2,
+      name: 'RESX risk admission ' + branch,
+      head_sha: head,
+      status: 'completed',
+      conclusion: 'success',
+      app: { id: 5919556 },
+      output: {
+        text: JSON.stringify({
+          version: 1,
+          repositoryId: 795522855,
+          destination: branch,
+          headSha: head,
+          pullRequests: [{ number: 7, baseSha: old, headRef: 'codex/change', draft: false }],
+          results: [],
+        }),
+      },
+    },
   ];
 }
 test('latest CI failure or pending state defeats stale success', () => {
-  assert.ok(successful(checks('dev'), head));
+  assert.ok(successful(checks('dev'), head, 'dev'));
   for (const change of [{ conclusion: 'failure' }, { status: 'in_progress', conclusion: null }])
-    assert.equal(successful([...checks('dev'), { ...checks('dev')[0], id: 3, ...change }], head), false);
+    assert.equal(successful([...checks('dev'), { ...checks('dev')[0], id: 3, ...change }], head, 'dev'), false);
 });
 function fixture(prs = []) {
   const calls = [];
@@ -23,7 +40,16 @@ function fixture(prs = []) {
     api: async (path, body) => {
       calls.push({ path, body });
       if (body) return {};
-      if (path === '') return { id: 795522855, full_name: 'nguijoel/ontoo-resx', default_branch: 'dev', allow_auto_merge: true };
+      if (path === '')
+        return {
+          id: 795522855,
+          full_name: 'nguijoel/ontoo-resx',
+          default_branch: 'dev',
+          allow_auto_merge: true,
+          allow_merge_commit: true,
+          allow_squash_merge: false,
+          allow_rebase_merge: false,
+        };
       if (['/branches/dev', '/branches/staging'].includes(path)) return { protected: true };
       if (path === '/git/ref/heads/dev') return { object: { sha: head } };
       if (path === '/git/ref/heads/staging') return { object: { sha: old } };
@@ -81,8 +107,10 @@ test('native clean PR enables auto-merge; already enabled is idempotent', async 
       state: 'open',
       node_id: 'synthetic-node',
       auto_merge: alreadyEnabled ? { enabled_by: { login: 'github-actions' } } : null,
-      base: { ref: 'dev', sha: old },
-      head: { sha: head, ref: 'codex/change', repo: { id: 795522855 } },
+      base: { ref: 'dev', sha: old, repo: { id: 795522855, full_name: 'nguijoel/ontoo-resx' } },
+      user: { id: 360355133, type: 'Bot' },
+      changed_files: 1,
+      head: { sha: head, ref: 'codex/change', repo: { id: 795522855, full_name: 'nguijoel/ontoo-resx' } },
     };
     const f = fixture([pr]),
       original = f.api;
@@ -90,18 +118,11 @@ test('native clean PR enables auto-merge; already enabled is idempotent', async 
       if (path === '/git/ref/heads/dev') return { object: { sha: old } };
       if (path.startsWith('/commits/')) {
         const result = checks('dev');
-        result[1].output = {
-          text: JSON.stringify({
-            version: 1,
-            repositoryId: 795522855,
-            headSha: head,
-            destination: 'dev',
-            expiresAtMs: Date.now() + 30000,
-            pullRequests: [{ number: 7, baseSha: old, headRef: 'codex/change' }],
-          }),
-        };
         return result;
       }
+      if (path === '/pulls/7/files?per_page=100') return [{ status: 'modified', filename: require('./resx-risk.cjs').CSS }];
+      if (path.startsWith('/contents/'))
+        return { encoding: 'base64', size: 40, content: Buffer.from('.search-icon {font-size:1.25rem;}').toString('base64') };
       if (path === '/pulls/7') return pr;
       return original(path, body, ...rest);
     };
@@ -254,7 +275,7 @@ test('existing exact native PR is recovered without another write', async () => 
 test('native creator rejects foreign routes and ref drift before any App write', async () => {
   for (const field of ['expectedHeadSha', 'expectedBaseSha', 'head']) {
     const f = creatorFixture();
-    await assert.rejects(nativeCreator(f)({ ...f.pr, [field]: field === 'head' ? 'codex/foreign' : 'e'.repeat(40) }));
+    await assert.rejects(nativeCreator(f)({ ...f.pr, [field]: field === 'head' ? 'feature/foreign' : 'e'.repeat(40) }));
     assert.equal(f.calls.length, 0);
   }
 });
@@ -310,4 +331,47 @@ test('unprotected target rejects before any native mutation without querying Adm
     f.calls.some(x => x.path.endsWith('/protection')),
     false,
   );
+});
+
+test('shared Actions issuer cannot substitute the independent risk-check issuer', () => {
+  const rows = checks('dev');
+  rows[1].app.id = 15368;
+  assert.equal(successful(rows, head, 'dev'), false);
+});
+test('App-authored feature PR opens automatically only from exact successful WIP push', async () => {
+  const { openFeature } = require('./resx-reconcile.cjs');
+  let writes = 0;
+  const run = {
+    id: 55,
+    event: 'push',
+    conclusion: 'success',
+    head_sha: head,
+    head_branch: 'codex/routine',
+    workflow_id: 4,
+    repository: { id: 795522855 },
+  };
+  const api = async path =>
+    path.startsWith('/actions/workflows/')
+      ? { path: '.github/workflows/resx-fast.yml' }
+      : path.startsWith('/pulls?')
+        ? []
+        : { object: { sha: path.endsWith('/dev') ? old : head } };
+  await openFeature({
+    api,
+    run,
+    createPullRequest: async pr => {
+      writes++;
+      assert.equal(pr.expectedHeadSha, head);
+      assert.equal(pr.expectedBaseSha, old);
+    },
+  });
+  assert.equal(writes, 1);
+  await openFeature({
+    api,
+    run: { ...run, conclusion: 'failure' },
+    createPullRequest: async () => {
+      writes++;
+    },
+  });
+  assert.equal(writes, 1);
 });

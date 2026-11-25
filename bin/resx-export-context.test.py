@@ -11,4 +11,11 @@ class Tests(unittest.TestCase):
    with self.assertRaises(ValueError):n['selected'](value,{'include':['**'],'exclude':[]})
   for value in ['../**','/a','a\\b']:
    with self.assertRaises(ValueError):n['pattern'](value)
+ def test_database_closure_reuses_css_only_and_rejects_missing_or_changed_consumer(self):
+  rows=[{'path':p,'bytes':1,'sha256':'a'*64} for p in n['DB_FIXED']]+[{'path':'api/src/main.ts','bytes':1,'sha256':'b'*64}]
+  base=n['database_closure'](rows)
+  self.assertEqual(base,n['database_closure'](rows+[{'path':'webapp/src/style.css','bytes':9,'sha256':'c'*64}]))
+  changed=[dict(row) for row in rows];changed[-1]['sha256']='d'*64
+  self.assertNotEqual(base['sha256'],n['database_closure'](changed)['sha256'])
+  with self.assertRaises(ValueError):n['database_closure'](rows[1:])
 if __name__=='__main__':unittest.main()

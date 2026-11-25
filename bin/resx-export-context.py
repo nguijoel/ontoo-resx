@@ -20,6 +20,20 @@ def selected(name,manifest):
  require(isinstance(name,str) and name and '\\' not in name and not name.startswith('/') and all(x not in ('','..','.') for x in name.split('/')))
  return any(pattern(x).fullmatch(name) for x in manifest['include']) and not any(pattern(x).fullmatch(name) for x in manifest['exclude'])
 
+DB_FIXED=frozenset(['api/package.json','api/tsconfig.json','package.json','yarn.lock',
+ 'bin/resx-runtime.cjs','bin/resx-runtime-profile.cjs','bin/resx-phase1-profile.cjs',
+ 'deploy/resx/Dockerfile','deploy/resx/Dockerfile.dockerignore','deploy/resx/build-inputs.json'])
+DB_SELECTION={'version':1,'roots':['api/src/'],'files':sorted(DB_FIXED),'algorithm':'sha256-path-bytes-inventory-v1'}
+
+def database_closure(inventory):
+ rows=sorted([row for row in inventory if row['path'].startswith('api/src/') or row['path'] in DB_FIXED],key=lambda row:row['path'])
+ require(DB_FIXED.issubset({row['path'] for row in rows}) and any(row['path'].startswith('api/src/') for row in rows))
+ require(len({row['path'] for row in rows})==len(rows))
+ payload={'selection':DB_SELECTION,'inventory':rows}
+ raw=json.dumps(payload,sort_keys=True,separators=(',',':')).encode()
+ return {'version':1,'sha256':hashlib.sha256(raw).hexdigest(),'files':len(rows),
+  'selectionSha256':hashlib.sha256(json.dumps(DB_SELECTION,sort_keys=True,separators=(',',':')).encode()).hexdigest()}
+
 def export(source,output):
  require(re.fullmatch('[a-f0-9]{40}',source) is not None)
  def git(*args):return subprocess.check_output(['git',*args],stderr=subprocess.DEVNULL)
@@ -44,7 +58,7 @@ def export(source,output):
     archive.addfile(info,io.BytesIO(data));inventory.append({'path':name,'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()})
  require({'deploy/resx/Dockerfile','deploy/resx/Dockerfile.dockerignore','deploy/resx/build-inputs.json','package.json','yarn.lock'}.issubset({x['path'] for x in inventory}))
  with Path(output).open('rb') as stream:context_sha=hashlib.file_digest(stream,'sha256').hexdigest()
- return {'sourceSha':source,'manifestSha256':hashlib.sha256(manifest_raw).hexdigest(),'contextSha256':context_sha,'files':len(inventory),'sourceBytes':total,'inventory':inventory}
+ return {'sourceSha':source,'manifestSha256':hashlib.sha256(manifest_raw).hexdigest(),'contextSha256':context_sha,'files':len(inventory),'sourceBytes':total,'inventory':inventory,'databaseClosure':database_closure(inventory)}
 
 if __name__=='__main__':
  import sys

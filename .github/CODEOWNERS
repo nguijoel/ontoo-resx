@@ -6,6 +6,8 @@
 # Ordinary top-level product prose can use checks-only auto-merge.
 /README.md
 /CHANGELOG.md
+# Routine UI leaf; signed risk admission enforces its narrow presentation envelope.
+/webapp/src/app/shared/components/search/search.component.css
 
 # Explicitly document security-critical ownership (also covered by the default).
 /.github/ @nguijoel

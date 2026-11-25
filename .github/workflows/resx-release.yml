@@ -30,6 +30,12 @@ jobs:
     outputs:
       deploy: ${{ steps.impact.outputs.deploy }}
     steps:
+      - name: Restrict explicit rollback to the authorised owner
+        if: inputs.action == 'rollback'
+        env:
+          ACTOR_ID: ${{ github.actor_id }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: test "$EVENT_NAME" = workflow_dispatch && test "$ACTOR_ID" = 6606980
       - name: Reject moved automatic release handoff
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -82,6 +88,7 @@ jobs:
       packages: write
     outputs:
       release_id: ${{ steps.receipt.outputs.release_id }}
+      receipt_json: ${{ steps.receipt.outputs.receipt_json }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -90,8 +97,11 @@ jobs:
         run: python3 -B bin/resx-export-context.py "$GITHUB_SHA" "$RUNNER_TEMP/resx-context.tar"
       - name: Build immutable image
         run: |
+          closure=$(python3 -c 'import json,os;from pathlib import Path;print(json.loads((Path(os.environ["RUNNER_TEMP"])/"resx-context.tar.receipt.json").read_text())["databaseClosure"]["sha256"])')
+          [[ "$closure" =~ ^[a-f0-9]{64}$ ]]
           docker build --platform linux/amd64 --file deploy/resx/Dockerfile \
             --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --label "com.ontoo.resx.db-closure-sha256=$closure" \
             --label "org.opencontainers.image.source=https://github.com/nguijoel/ontoo-resx" \
             --iidfile "$RUNNER_TEMP/resx-image.id" --tag "resx-ci:$GITHUB_SHA" - < "$RUNNER_TEMP/resx-context.tar"
       - name: Qualify native modules without DB, network or secrets
@@ -100,7 +110,7 @@ jobs:
           test "$(docker image inspect --format '{{.Config.User}}' "$image")" = '10001:10001'
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
             --user 10001:10001 --memory 256m --cpus .5 --pids-limit 64 --entrypoint node "$image" \
-            -e "const b=require('bcrypt');if(!b.compareSync('synthetic',b.hashSync('synthetic',4)))process.exit(1);require('mysql2');require('./bin/resx-runtime-profile.cjs');"
+            -e "const b=require('bcrypt');if(!b.compareSync('synthetic',b.hashSync('synthetic',4)))process.exit(1);require('mysql2');const fs=require('node:fs');for(const [p,v] of [['mysql2','3.14.0'],['typeorm','0.3.28']])if(JSON.parse(fs.readFileSync('node_modules/'+p+'/package.json','utf8')).version!==v)process.exit(1);require('./bin/resx-runtime-profile.cjs');"
       - name: Publish qualified image to GHCR
         env:
           REGISTRY_TOKEN: ${{ github.token }}
@@ -132,7 +142,9 @@ jobs:
               'registryRepository':repository,'registryManifestDigest':matched[0].split('@')[1],'imageId':image}
           data=json.dumps(receipt,sort_keys=True,separators=(',',':')).encode()
           (root/'resx-release-receipt.json').write_bytes(data)
-          with open(os.environ['GITHUB_OUTPUT'],'a') as stream:stream.write('release_id='+hashlib.sha256(data).hexdigest()+'\n')
+          with open(os.environ['GITHUB_OUTPUT'],'a') as stream:
+              stream.write('release_id='+hashlib.sha256(data).hexdigest()+'\n')
+              stream.write('receipt_json='+data.decode()+'\n')
           PY
       - name: Upload separate bound receipt
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -146,16 +158,35 @@ jobs:
     if: always() && github.ref == 'refs/heads/staging' && vars.RESX_PRE_ENROLLED == 'true' && needs.enrollment.result == 'success' && (needs.image.result == 'success' || (inputs.action == 'rollback' && needs.image.result == 'skipped'))
     needs: [enrollment, image]
     runs-on: ubuntu-24.04
-    timeout-minutes: 2
+    timeout-minutes: 10
     environment: hosting-pre
-    permissions: {}
+    permissions:
+      contents: read
     steps:
-      - name: Fail closed until the existing controller transport is enrolled
-        run: |
-          echo 'RESX_CONTROLLER_TRANSPORT_NOT_INTEGRATED: no deployment was requested.' >&2
-          exit 1
-
-# Deliberately no custom HTTPS/OIDC ingress, queue, artifact collector or App key.
-# Infrastructure must supply the existing controller transport and its fixed
-# source/digest/config/DB/audit contract before this guard can be replaced.
-# Publication success alone must never report successful PRE deployment.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.23.5'
+      - name: Release through the restricted existing controller
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESX_ACTION: ${{ inputs.action || 'deploy' }}
+          RESX_RECEIPT_JSON: ${{ needs.image.outputs.receipt_json }}
+          RESX_RELEASE_ID: ${{ inputs.release_id }}
+          RESX_DEPLOY_KEY: ${{ secrets.ONTOO_RESX_PRE_DEPLOY_SSH_KEY }}
+        run: node bin/resx-release.cjs
+      - name: Retain public request and sanitized terminal evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: resx-controller-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/resx-release-request.json
+            ${{ runner.temp }}/resx-release-result.json
+          if-no-files-found: ignore
+          retention-days: 90
+# No private key, raw SSH error, arbitrary remote command or custom ingress.
+# Root admission/current-state/config/DB/digest/audit checks precede mutation.
