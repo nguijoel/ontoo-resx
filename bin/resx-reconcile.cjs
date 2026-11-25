@@ -128,6 +128,8 @@ async function reconcile({ api, policyApp, validatedRun, createPullRequest }) {
         title: 'Synchronize verified RESX promotion ancestry',
         head: 'staging',
         base: 'dev',
+        expectedHeadSha: stage.object.sha,
+        expectedBaseSha: dev.object.sha,
         draft: false,
         body: 'Ancestry only: exact current dev/staging full Git trees match. Independent eligibility must verify current refs and prior promotion; no application/config/schema content change.',
       });
@@ -146,6 +148,8 @@ async function reconcile({ api, policyApp, validatedRun, createPullRequest }) {
       title: 'Promote validated RESX dev to staging',
       head: 'dev',
       base: 'staging',
+      expectedHeadSha: dev.object.sha,
+      expectedBaseSha: stage.object.sha,
       draft: false,
       body:
         'CI/CD-POC-001 protected promotion. Source ' +
@@ -229,9 +233,11 @@ function brokerCreator({ api, fetchImpl = fetch, requestUrl, requestToken, recor
     assert(pr?.draft === false && typeof pr.title === 'string' && pr.title.length > 0 && pr.title.length <= 200);
     assert(typeof pr.body === 'string' && Buffer.byteLength(pr.body) <= 16000);
     assert((pr.head === 'dev' && pr.base === 'staging') || (pr.head === 'staging' && pr.base === 'dev'));
-    const headSha = (await api('/git/ref/heads/' + pr.head)).object.sha;
-    const baseSha = (await api('/git/ref/heads/' + pr.base)).object.sha;
-    assert(SHA.test(headSha) && SHA.test(baseSha));
+    const headSha = pr.expectedHeadSha,
+      baseSha = pr.expectedBaseSha;
+    assert(SHA.test(headSha || '') && SHA.test(baseSha || ''));
+    assert((await api('/git/ref/heads/' + pr.head)).object.sha === headSha);
+    assert((await api('/git/ref/heads/' + pr.base)).object.sha === baseSha);
     const intent = {
       operation: 'create',
       repositoryId: REPOSITORY_ID,

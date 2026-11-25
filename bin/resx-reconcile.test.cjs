@@ -341,7 +341,15 @@ function brokerFixture() {
   return {
     requests,
     options,
-    pr: { title: 'Promote validated change', body: 'Public source/run reference', head: 'dev', base: 'staging', draft: false },
+    pr: {
+      title: 'Promote validated change',
+      body: 'Public source/run reference',
+      head: 'dev',
+      base: 'staging',
+      expectedHeadSha: head,
+      expectedBaseSha: old,
+      draft: false,
+    },
   };
 }
 test('qualified broker client uses fixed audience/endpoint and stable intent across presentation changes', async () => {
@@ -382,4 +390,27 @@ test('broker unknown result is not retried and mismatched response cannot author
     await assert.rejects(brokerCreator(f.options)(f.pr));
     assert.equal(f.requests.filter(r => r.url.includes('/resx-authoring')).length, 1);
   }
+});
+test('promotion and ancestry sync retain selected refs and reject movement before OIDC or authoring', async () => {
+  for (const sync of [false, true])
+    for (const moved of ['head', 'base']) {
+      const f = fixture(),
+        original = f.api,
+        broker = brokerFixture();
+      let devReads = 0,
+        stageReads = 0;
+      f.api = async (path, body, ...rest) => {
+        if (path === '/git/ref/heads/dev') return { object: { sha: ++devReads > 1 && moved === (sync ? 'base' : 'head') ? 'e'.repeat(40) : head } };
+        if (path === '/git/ref/heads/staging')
+          return { object: { sha: ++stageReads > 1 && moved === (sync ? 'head' : 'base') ? 'e'.repeat(40) : old } };
+        if (sync && path.startsWith('/git/commits/')) return { tree: { sha: 'c'.repeat(40) } };
+        if (sync && path.startsWith('/compare/')) return { status: 'ahead', merge_base_commit: { sha: head } };
+        return original(path, body, ...rest);
+      };
+      const creator = brokerCreator({ ...broker.options, api: f.api });
+      await assert.rejects(
+        reconcile({ ...f, policyApp, validatedRun: sync ? { ...run, head_branch: 'staging', head_sha: old } : run, createPullRequest: creator }),
+      );
+      assert.equal(broker.requests.length, 0);
+    }
 });

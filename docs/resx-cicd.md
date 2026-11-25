@@ -242,8 +242,9 @@ controller replacement occurred. Native runtime/endpoint qualification remains.
 
 The local PR-authoring client now implements the agreed fixed HTTPS/OIDC protocol
 at `/.well-known/ontoo-release/resx-authoring`, audience `ontoo-resx-authoring`.
-It permits only dev→staging and staging→dev requests, binds freshly read head/base
-SHAs and a stable semantic request ID, and accepts only the exact broker success
+It permits only dev→staging and staging→dev requests, preserves the reconciler's
+selected head/base SHAs, rejects changed live refs before OIDC/request submission,
+and binds a stable semantic request ID. It accepts only the exact broker success
 schema. Tokens are request headers only; response sizes and deadlines are bounded.
 Unknown/rejected/network outcomes are not retried automatically under a new ID.
 The request ID and source refs are safe reconciliation evidence; titles/bodies and
