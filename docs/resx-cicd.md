@@ -197,3 +197,36 @@ explicitly. No variable/enrollment/host operation was performed by this source
 change. Native merge handoff/recovery remains unqualified; unresolved reservations
 need evidence-based reconciliation. A failed/cancelled prior run is preserved,
 not silently rerun. Qualified PR creation is still a separate required adapter.
+
+The operator's downloaded evaluator PEM is only a temporary one-time import
+source. Infrastructure reports the owner-approved authoritative store was created
+once at `/ontoo-infrastructure/hosting/pre/release-evaluator/github-app-private-key`,
+account284106887285/eu-west-2, Standard SecureString using `alias/aws/ssm`, version1.
+Its captured internal readback matched; no IAM grant or overwrite occurred.
+Provisioning/rotation/recovery use the existing Infrastructure operator. No new
+unattended HOST003 AWS identity or static AWS access key is introduced.
+`/etc/ontoo/release-evaluator/github-app.pem`, if retained, is
+protected runtime custody (root:evaluator0440 under0750), not the authoritative
+store. The trusted service consumes its approved runtime credential; releases must not
+depend on the operator's laptop, Downloads directory or a local selection file.
+Neither the repository, application image nor candidate Actions jobs receive the
+key. After verified import and actual App/installation qualification, reconcile
+the failed-download key, retain only the approved credential/recovery custody,
+and dispose of the temporary download through the governed cleanup operation.
+Rotation/revocation and recovery must preserve service identity and audit history;
+the local transfer failure is an implementation defect, not the permanent design.
+The attempted local consumer rejected inconsistent Windows ctime metadata before
+its first key-content read, according to Infrastructure's diagnosis; no import was
+performed by that attempt. Infrastructure subsequently reports successful
+SSM-version-bound runtime import, receipt SHA256
+`352b14b4aafd7c51d57da31a9f659170fa2f96615d18deac7b9e2ef25400b725`,
+and corrected once-only App qualification run02, protected receipt SHA256
+`92dd5684e11e2f7da62ed76d8989812327dd04064a7e1053d6740dc5fa4442ae`.
+Qualification proved App5919556/install185732896 and a token narrowed to RESX795522855
+with Checks write and Actions/Contents/Pull requests/Metadata read. No secret or
+token value was recorded. The original failed qualification is preserved; its
+pre-network token-expiry sample required a narrow issuance-budget correction.
+The final installed service closure must include that corrected identity code.
+All five release services remain inactive. Do not repeat the accepted store,
+import or qualification, or resume the failed filesystem transfer. This is actual
+identity/custody evidence, not automated promotion or live deployment acceptance.
