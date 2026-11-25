@@ -100,14 +100,20 @@ The immutable export also computes the App-reviewed database consumer closure:
 all regular api/src/** blobs plus API/root package and lock, API tsconfig, protected
 runtime/profile files and Docker/build-input definitions. Sorted path/byte hashes
 and exact selection rules define its fingerprint; source SHA is bound separately,
-so a CSS-only change reuses the accepted DB ABI. Image label
+independently of frontend changes. Image label
 com.ontoo.resx.db-closure-sha256 carries it. Frozen runtime qualification checks
 mysql2 3.14.0 and TypeORM0.3.28, not semver declarations alone.
 
 Actual source71a76cd closure97ce6c28239cbb03519c3c467e37d7556a1f8ee9487595df895749a9b110f791
 covers116 files, selection3738996d9eddeb7e47570aef0b12ad187cbcce809093cd155ebf71e286d0c885.
-This is not a schema digest. DBA owns the complete protected native descriptor and
-compatibility baseline. Known pre-existing limits remain explicit: label.color
+This is not a schema digest or release approval. The owner narrowed the first
+release to application deployment only (25 November, Infra owner turns
+01a214ae-4a78, 01a214b0-357c and 01a214b1-2aea). Fresh database/schema/session
+queries, descriptor comparison and DBA baseline enrollment are excluded from
+this app release admission. Preserve earlier evidence without continuing those
+diagnostics or treating them as deployment blockers. The existing DB connection,
+permissions and no-AWS configuration remain paired with the app. Startup
+automigration and seeding remain false. Known pre-existing limits remain explicit: label.color
 native7 versus entity8 only certifies values fitting7; translation.value native
 mediumtext is not permission to shrink/migrate it to entity text. No automatic
 DDL, migrations, seeding, repair or data rollback is permitted.
@@ -125,8 +131,9 @@ are private and removed in finally.
 Deploy input is exactly action+the seven-field receipt. Rollback input selects only a retained releaseId, with the exact current
 sourceSha/runId/runAttempt job provenance (no image/config/path override); the workflow restricts explicit rollback to authorised
 owner6606980. Root binds current/predecessor identity, allowed immutable image,
-source, config/runtime pair, DB ABI, budget, global lock, source/config idempotency,
-health, compatible retention and durable audit before mutation. It independently
+source, existing config/runtime pair, budget, global lock, source/config idempotency,
+application health, retained recovery and durable audit before mutation. This
+app-only admission does not query or enroll the database. It independently
 checks current protected source. The client requires an exact healthy terminal
 result and root receiptSha256, and retains only public request/sanitized result.
 A compensation ROLLED_BACK is deployment failure, not success. Explicit successful
@@ -182,3 +189,8 @@ CI reuses application validation only for proven no-content ancestry changes.
 The repeat-cycle increment passed53 focused Node control tests and workflow
 YAML parsing, with independent bounded source review. These are source checks,
 not live promotion, deployment or rollback acceptance.
+
+
+Delivery order: first automatic healthy PRE application release, then repeat
+deployment proof, then rollback proof. Later demonstrations are not prerequisites
+to the first release; essential retained recovery and release protections remain.
