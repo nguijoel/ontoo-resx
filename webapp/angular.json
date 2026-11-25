@@ -50,6 +50,35 @@
               "vendorChunk": false,
               "buildOptimizer": true
             },
+            "preview": {
+              "budgets": [
+                {
+                  "type": "anyComponentStyle",
+                  "maximumWarning": "6kb"
+                }
+              ],
+              "fileReplacements": [
+                {
+                  "replace": "src/environments/environment.ts",
+                  "with": "src/environments/environment.preview.ts"
+                }
+              ],
+              "styles": [
+                "src/styles.preview.scss"
+              ],
+              "optimization": {
+                "scripts": true,
+                "styles": true,
+                "fonts": false
+              },
+              "outputHashing": "all",
+              "sourceMap": false,
+              "namedChunks": false,
+              "aot": true,
+              "extractLicenses": true,
+              "vendorChunk": false,
+              "buildOptimizer": true
+            },
             "production_noflags": {
               "budgets": [
                 {

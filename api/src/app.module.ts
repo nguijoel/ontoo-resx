@@ -12,6 +12,7 @@ import { config } from './config';
 import { AuthController } from './controllers/auth.controller';
 import { ExportsController } from './controllers/exports.controller';
 import HealthController from './controllers/health.controller';
+import RuntimeInfoController from './controllers/runtime-info.controller';
 import { ImportController } from './controllers/import.controller';
 import IndexController from './controllers/index.controller';
 import LocaleController from './controllers/locale.controller';
@@ -61,7 +62,7 @@ import { PushController } from './controllers/push.controller';
       },
     }),
     ThrottlerModule.forRoot([{ ttl: config.throttle.global.ttl, limit: config.throttle.global.limit }]),
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: ['resx-phase1', 'resx-hosted-pre', 'resx-local-dev'].includes(process.env.TR_RUNTIME_PROFILE) }),
     RedisModule,
     TypeOrmModule.forRootAsync({
       useFactory: async () => dataSourceOptions(),
@@ -71,6 +72,7 @@ import { PushController } from './controllers/push.controller';
   ],
   controllers: [
     HealthController,
+    RuntimeInfoController,
     AuthController,
     UserController,
     ProjectController,

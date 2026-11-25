@@ -1,7 +1,10 @@
 import { Component } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { environment } from '../environments/environment';
+import { RuntimeInfo } from './runtime-info';
 import { Select } from '@ngxs/store';
-import { combineLatest, Observable } from 'rxjs';
-import { delay, map } from 'rxjs/operators';
+import { combineLatest, Observable, of } from 'rxjs';
+import { catchError, delay, map, shareReplay } from 'rxjs/operators';
 import { AuthState } from './auth/stores/auth.state';
 import { ProjectClientState } from './projects/stores/project-client.state';
 import { ProjectUserState } from './projects/stores/project-user.state';
@@ -15,6 +18,15 @@ import { TranslationsState } from './projects/stores/translations.state';
   styleUrls: ['./app.component.css'],
 })
 export class AppComponent {
+  readonly runtimeInfo$: Observable<RuntimeInfo | null>;
+
+  constructor(http: HttpClient) {
+    this.runtimeInfo$ = http.get<RuntimeInfo>(`${environment.apiEndpoint}/runtime-info`).pipe(
+      catchError(() => of(null)),
+      shareReplay({ bufferSize: 1, refCount: true }),
+    );
+  }
+
   @Select(AuthState.isAuthenticated)
   isAuthenticated$: Observable<boolean>;
 

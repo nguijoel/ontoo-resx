@@ -1,3 +1,4 @@
+import { EOL } from 'os';
 import { loadFixture, simpleFormatFixture } from './fixtures';
 import { propertiesExporter, propertiesParser } from './properties';
 
@@ -32,6 +33,7 @@ test('should encode and decode properties files with ISO-8859-1 by default', asy
 
 test('should export properties files', async () => {
   const result = await propertiesExporter(simpleFormatFixture);
-  const expected = loadFixture('simple.properties');
+  // The properties dependency emits platform-native record separators.
+  const expected = loadFixture('simple.properties').replace(/\r?\n/g, EOL);
   expect(result.toString()).toEqual(expected);
 });
