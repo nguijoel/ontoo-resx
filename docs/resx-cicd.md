@@ -139,3 +139,37 @@ changes: immutable context, pinned Linux base, isolated native-module smoke and
 actual docker-save format metadata. The earlier green CI checkpoints predate
 this stronger image gate; they do not claim image-gate success. Prose-only work
 skips both application and image jobs only under the enrolled source classifier.
+
+On 25 November, exact source `637e86bf7485e6413d068968dd9aa71fd7aae3ee`
+passed [hosted validation run 45552017483](https://github.com/nguijoel/ontoo-resx/actions/runs/45552017483):
+source controls, application tests/build, Linux image qualification and the required
+aggregate all succeeded. Fast-feedback run 45552008543 also succeeded. The image
+job reported an actual hybrid Docker export: `manifestBased=true`, `ociIndex=true`,
+395703296 archive bytes and 25 entries. The protected receiver must qualify this
+format; successful image CI alone is not archive-parser or PRE acceptance. This
+job did not publish an artifact or deploy an application. The local 75-second
+notification deadline adjustment is subsequent source work, not covered by that run.
+
+## CI/CD-001 current direction
+
+Owner priority is P1. PR6 was closed unmerged at `637e86b`; preserve its source
+branch/history and create a fresh application PR only when the process is ready.
+Do not reopen PR6 or create a separate POC product change. Defer redundant broad
+testing; retain required CI and targeted authorization, release and rollback checks.
+
+The approved ONTOO Release Evaluator App was created as App ID `5919556` and
+installed as installation `185732896`, with selected access only to repository
+`795522855` (`nguijoel/ontoo-resx`). GitHub UI readback confirmed Checks write and
+Actions/Contents/Pull requests/Metadata read. No private key was generated or
+provisioned by that operation; service activation and actual identity qualification
+remain unfinished engineering. Account authentication is no longer a blocker.
+
+GHCR remains the standard distribution mechanism. The local release workflow
+now proposes staging-only `packages:write`, isolated runner Docker credentials,
+a fixed `ghcr.io/nguijoel/ontoo-resx` repository and immutable digest readback.
+Its canonical receipt binds repository/source/run/attempt, registry repository,
+registry manifest digest and image config ID; Actions retains that receipt only.
+This replaces the earlier archive-distribution proposal. It has not been published,
+run, or enrolled at the receiver; protected digest-pull/collector compatibility and
+actual package access must be qualified before enabling releases. The historical
+archive-parser work remains evidence only and is not the default release path.

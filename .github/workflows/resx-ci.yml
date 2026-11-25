@@ -111,13 +111,40 @@ jobs:
             -e "const b=require('bcrypt');if(!b.compareSync('synthetic',b.hashSync('synthetic',4)))process.exit(1);require('mysql2');require('./bin/resx-runtime-profile.cjs');"
           docker save --output "$RUNNER_TEMP/resx-qualified-image.tar" "$image"
           python3 - <<'PY'
-          import json,os,tarfile
+          import hashlib,json,os,re,tarfile
           from pathlib import Path
           archive=Path(os.environ['RUNNER_TEMP'])/'resx-qualified-image.tar'
           with tarfile.open(archive) as tar:
               names=tar.getnames()
               print(json.dumps({'manifestBased':'manifest.json' in names,'ociIndex':'index.json' in names,
                   'archiveBytes':archive.stat().st_size,'entries':len(names)}))
+              members=tar.getmembers()
+              if len(members)>1000: raise ValueError('Archive inventory exceeds bound')
+              def path(value):
+                  if not isinstance(value,str) or not re.fullmatch(r'[A-Za-z0-9_./-]{1,256}',value):
+                      raise ValueError('Archive inventory path rejected')
+                  if value.startswith('/') or '..' in value.split('/'): raise ValueError('Unsafe archive path')
+                  return value
+              print(json.dumps({'members':[{'name':path(m.name),'type':'file' if m.isfile() else 'directory' if m.isdir() else 'other','bytes':m.size} for m in members]}))
+              def metadata(name):
+                  member=tar.getmember(name)
+                  if not member.isfile() or member.size>1048576: raise ValueError('Metadata exceeds bound')
+                  return json.loads(tar.extractfile(member).read())
+              if 'manifest.json' in names:
+                  manifest=metadata('manifest.json')
+                  if not isinstance(manifest,list) or len(manifest)!=1: raise ValueError('Image manifest rejected')
+                  config=tar.getmember(path(manifest[0]['Config']))
+                  if not config.isfile() or config.size>1048576: raise ValueError('Image config exceeds bound')
+                  print(json.dumps({'manifestConfig':config.name,'configSha256':hashlib.sha256(tar.extractfile(config).read()).hexdigest(),
+                      'manifestLayers':[path(p) for p in manifest[0]['Layers']]}))
+              if 'oci-layout' in names:
+                  print(json.dumps({'ociLayoutVersion':metadata('oci-layout').get('imageLayoutVersion')}))
+              if 'index.json' in names:
+                  index=metadata('index.json')
+                  descriptors=index.get('manifests',[])
+                  if len(descriptors)>100: raise ValueError('OCI descriptor inventory exceeds bound')
+                  print(json.dumps({'ociSchemaVersion':index.get('schemaVersion'),'ociDescriptors':[
+                      {key:d.get(key) for key in ('mediaType','digest','size')} for d in descriptors]}))
           PY
       # Qualification only, not a registry publish, DB startup or PRE admission.
   required:
