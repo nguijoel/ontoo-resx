@@ -50,9 +50,10 @@ def enroll(value):
  model=module['inventory'](raw)
  return module,custody,c,h,raw,model
 
-def native(custody,h,prefix,sql,restore=False):
+def native(custody,h,prefix,sql,restore=False,secret=None):
  require(prefix in {'preflight','database','account','rights','import','lock','postflight','ddl','check'})
  require(isinstance(sql,bytes) and len(sql)<=524288 and restore==(prefix=='import'))
+ require((prefix=='account' and isinstance(secret,str) and len(secret)==64 and all(c in '0123456789abcdef' for c in secret)) or (prefix!='account' and secret is None))
  # Private restore defaults file is fixed. No caller path, options or environment.
  defaults='/run/secrets/restore-pre-run01.cnf' if restore else '/run/secrets/admin.cnf'
  options=['--defaults-file='+defaults,'--protocol=socket','--socket=/run/mysqld/mysqld.sock','--skip-reconnect','--batch','--raw','--skip-column-names','--binary-mode','--default-character-set=utf8mb4']
@@ -61,9 +62,16 @@ def native(custody,h,prefix,sql,restore=False):
  timeout=600 if restore else 60
  args=['docker','exec','--interactive','--user','0',CID,'/usr/bin/env','-i','PATH=/usr/sbin:/usr/bin:/sbin:/bin','HOME=/nonexistent','LANG=C','/usr/bin/timeout','--signal=TERM','--kill-after=5s',str(timeout)+'s','/usr/bin/mariadb']+options
  p=custody['bounded_capture'](args,sql,h['ENV'],seconds=timeout+15)
+ # Account SQL diagnostics can quote the statement, including its new password.
+ # Preserve diagnostic hashes, never the known plaintext credential in captures.
+ original={name:sha(p[name]) for name in ('stdout','stderr')}
+ if secret is not None:
+  token=secret.encode('ascii')
+  p={**p,'stdout':p['stdout'].replace(token,b'[REDACTED_PASSWORD]'),'stderr':p['stderr'].replace(token,b'[REDACTED_PASSWORD]')}
  h['save'](ROOT/(prefix+'.stdout.private'),p['stdout'])
  h['save'](ROOT/(prefix+'.stderr.private'),p['stderr'])
  result={k:v for k,v in p.items() if k not in ('stdout','stderr')}
+ result.update({'originalStdoutSha256':original['stdout'],'originalStderrSha256':original['stderr'],'credentialRedactionApplied':secret is not None})
  h['save'](ROOT/(prefix+'.exit.json'),result)
  require(p['exitCode']==0 and p['timeout'] is False and p['outputOverflow'] is False and p['captureComplete'] is True and p['captureError'] is False and p['stderr']==b'')
  return p['stdout']
@@ -85,14 +93,14 @@ def create_cnf(password):
 def perform(module,custody,h,raw,model,verify,credential=create_cnf,password_factory=lambda:secrets.token_hex(32)):
  # Shared orchestration is deliberately injected for fault/order tests.
  phase='PREFLIGHT';db='NOT_STARTED';account='NOT_STARTED';data='NOT_STARTED'
- call=lambda prefix,sql,restore=False:native(custody,h,prefix,sql,restore)
+ call=lambda prefix,sql,restore=False,secret=None:native(custody,h,prefix,sql,restore,secret)
  try:
   module['preflight'](call('preflight',module['PREFLIGHT_SQL']))
   phase='CREATE_DATABASE';db='UNKNOWN'
   require(call('database',module['CREATE_DATABASE_SQL'])==b'');db='CREATED'
   phase='CREATE_RESTORE_CUSTODY';password=password_factory();credential(password)
   phase='CREATE_RESTORE_ACCOUNT';account='UNKNOWN'
-  require(call('account',module['create_restore_account'](password))==b'');password=None;account='CREATED_UNVERIFIED'
+  require(call('account',module['create_restore_account'](password),secret=password)==b'');password=None;account='CREATED_UNVERIFIED'
   phase='VERIFY_RESTORE_RIGHTS';module['rights'](call('rights',module['RIGHTS_SQL']));account='CREATED_VERIFIED'
   phase='IMPORT';data='UNKNOWN'
   notes=call('import',raw,True);data='IMPORTED_UNVERIFIED';module['import_notes'](notes)

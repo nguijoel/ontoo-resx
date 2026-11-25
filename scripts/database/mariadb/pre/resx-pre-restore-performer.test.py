@@ -17,10 +17,11 @@ class Tests(unittest.TestCase):
   m['postflight_sql']=lambda model:b'post'
   m['show_create_sql']=lambda model:b'ddl'
   m['postflight']=lambda raw,model:{'tables':14,'rows':2863}
-  def native(c,h,prefix,sql,restore=False):
+  def native(c,h,prefix,sql,restore=False,secret=None):
    calls.append(prefix)
    if fail==prefix:raise ValueError('PRIVATE_SYNTHETIC_SECRET')
    if prefix=='import':self.assertEqual(sql,b'EXACT_SOURCE');self.assertTrue(restore)
+   if prefix=='account':self.assertEqual(secret,'a'*64)
    return b''
   def save(path,value):saved[path.name]=value
   def verify():
@@ -82,5 +83,16 @@ class Tests(unittest.TestCase):
   self.assertEqual(hashlib.sha256(raw).hexdigest(),n['MODULE_SHA'])
   self.assertEqual(n['load'](raw,n['MODULE_SHA'],'test_module')['DB'],'ontoo_resx_pre')
   with self.assertRaises(ValueError):n['load'](raw+b'\n',n['MODULE_SHA'],'test_module')
+
+ def test_account_error_redacts_known_secret_before_any_capture_save(self):
+  token='a1'*32;saved={};raw_error=b'ERROR 1064 statement PASSWORD '+token.encode()
+  def capture(args,data,env,seconds):
+   return {'stdout':b'echo '+token.encode(),'stderr':raw_error,'exitCode':1,'timeout':False,'outputOverflow':False,'captureComplete':True,'captureError':False}
+  with self.assertRaises(ValueError):n['native']({'bounded_capture':capture},{'ENV':{},'save':lambda p,v:saved.setdefault(p.name,v)},'account',b'private SQL',secret=token)
+  self.assertIn(b'[REDACTED_PASSWORD]',saved['account.stderr.private'])
+  self.assertNotIn(token,str(saved))
+  self.assertEqual(saved['account.exit.json']['originalStderrSha256'],hashlib.sha256(raw_error).hexdigest())
+  self.assertTrue(saved['account.exit.json']['credentialRedactionApplied'])
+  with self.assertRaises(ValueError):n['native']({'bounded_capture':capture},{'ENV':{},'save':lambda p,v:None},'account',b'private SQL')
 
 if __name__=='__main__':unittest.main()
