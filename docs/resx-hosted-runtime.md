@@ -56,8 +56,10 @@ No plaintext, ssl:false or rejectUnauthorized:false fallback exists.
 
 The launcher accepts no arbitrary target and sanitizes its child environment.
 All three dotenv loaders are bypassed for these profiles. Synchronize is false;
-migrations, seeding, signups, Google auth, SMTP/debug previews, AWS and shared Redis
-are disabled. Hosted CORS is disabled (same origin). No runtime npm/yarn install. Preview-only Sass suppresses external Google font
+migrations, seeding, signups, Google auth, SMTP/debug previews and shared Redis
+are disabled. AWS is absent by default; only the complete owner-approved hosted
+PRE resource-push configuration below can pass to the API. Other AWS settings
+remain blocked, and DEV/legacy PRE-local outbound behavior is unchanged. Hosted CORS is disabled (same origin). No runtime npm/yarn install. Preview-only Sass suppresses external Google font
 imports as well as CDN flags; existing non-preview styles retain their defaults.
 The existing controller's read-only rootfs can remain enabled; runtime has no
 write requirement beyond approved temporary memory-backed paths. Map the protected
@@ -69,6 +71,34 @@ Preserve cap-drop, no-new-privileges and read-only rootfs. No global permission
 changes are implied.
 DB restore/integrity/recovery and minimal connection/startup readiness remain
 required; health alone does not certify imported-data functionality.
+
+## Optional owner-approved PRE resource push
+
+The owner selected this existing destination on 2026-11-25. Only these exact public
+settings plus the two protected credentials can pass the hosted PRE launcher:
+
+    TR_AWS_S3_REGION=eu-west-2
+    TR_AWS_S3_BUCKET=ontoo-resource
+    TR_AWS_S3_KEY_TEMPLATE=resource/{id}/{iso}/{iso}.json
+    TR_AWS_CLOUDFRONT_DISTRIBUTION_ID=EEMP5SB3QEMM6
+    TR_AWS_ACCESS_KEY_ID=<protected custodian value>
+    TR_AWS_SECRET_ACCESS_KEY=<protected custodian value>
+
+Omit all six to retain download-only behavior. Partial configuration, another
+target, placeholder credentials or attempting this on local DEV fails validation.
+Do not copy dotenv/keys into Git, build inputs, messages or logs. Infrastructure
+must qualify credential custody and existing permissions for the exact target;
+this source does not create keys, permissions, buckets or distributions. The
+current key layout is retained; separate DEV storage paths are deferred. No
+upload/invalidation occurs at startup or during health/metadata checks. Only an
+authenticated, authorized explicit Push generates saved translations and uploads
+them. Its empty POST body is valid; missing configuration returns a safe503
+PushUnavailable response with Download guidance, not a malformed-request400.
+
+The predecessor2d749 image rejects AWS fields. Keep its exact old no-AWS profile
+for rollback and bind a separate candidate config revision. Preserve TR_SECRET
+for JWT compatibility; do not mutate the serving predecessor's configuration.
+Rollback of app/config does not undo S3 writes; release smoke must not call Push.
 
 ## Local DEV, only after qualified DEV initialization
 

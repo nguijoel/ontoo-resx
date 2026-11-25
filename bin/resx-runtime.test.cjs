@@ -109,3 +109,44 @@ test('hosted CLI check performs no connection and prints no credential values', 
   assert.match(result.stdout, /no database connection attempted/);
   assert.ok(!result.stdout.includes(input.TR_DB_PASSWORD));
 });
+
+const approvedPush = {
+  TR_AWS_S3_REGION: 'eu-west-2', TR_AWS_S3_BUCKET: 'ontoo-resource',
+  TR_AWS_S3_KEY_TEMPLATE: 'resource/{id}/{iso}/{iso}.json',
+  TR_AWS_CLOUDFRONT_DISTRIBUTION_ID: 'EEMP5SB3QEMM6',
+  TR_AWS_ACCESS_KEY_ID: 'synthetic-approved-key',
+  TR_AWS_SECRET_ACCESS_KEY: 'synthetic-approved-secret',
+};
+
+test('hosted PRE passes only the exact owner-approved resource push configuration', () => {
+  const env = runtime.buildEnvironment({ ...input, ...approvedPush }, 'resx-hosted-pre',
+    { AWS_PROFILE: 'unexpected', TR_AWS_SESSION_TOKEN: 'unexpected', PATH: process.env.PATH });
+  runtime.assertRuntimeEnvironment(env);
+  for (const [key, value] of Object.entries(approvedPush)) assert.equal(env[key], value);
+  assert.equal(env.AWS_PROFILE, undefined);
+  assert.equal(env.TR_AWS_SESSION_TOKEN, undefined);
+  // Driver/TLS validation remains intact with the approved outbound fields.
+  assert.equal(runtime.databaseOptions(env).ssl.verifyIdentity, true);
+  assert.equal(env.TR_DB_AUTOMIGRATE, 'false');
+  assert.equal(env.TR_SEED_DATA, 'false');
+});
+
+test('partial/other-target/placeholder push settings and arbitrary AWS fields fail closed', () => {
+  for (const edit of [
+    { TR_AWS_S3_REGION: 'us-east-1' }, { TR_AWS_S3_BUCKET: 'another-bucket' },
+    { TR_AWS_S3_KEY_TEMPLATE: 'other/{id}/{iso}.json' },
+    { TR_AWS_CLOUDFRONT_DISTRIBUTION_ID: 'another-distribution' },
+    { TR_AWS_SECRET_ACCESS_KEY: '' }, { TR_AWS_ACCESS_KEY_ID: 'xxx' },
+  ]) assert.throws(() => runtime.buildEnvironment({ ...input, ...approvedPush, ...edit }, 'resx-hosted-pre'));
+  assert.throws(() => runtime.buildEnvironment({ ...input, TR_AWS_S3_BUCKET: 'ontoo-resource' }, 'resx-hosted-pre'));
+  const env = runtime.buildEnvironment({ ...input, ...approvedPush }, 'resx-hosted-pre');
+  assert.throws(() => runtime.assertRuntimeEnvironment({ ...env, AWS_PROFILE: 'unexpected' }));
+  assert.throws(() => runtime.assertRuntimeEnvironment({ ...env, TR_AWS_SESSION_TOKEN: 'unexpected' }));
+  assert.throws(() => runtime.assertRuntimeEnvironment({ ...env, TR_AWS_S3_BUCKET: 'another-bucket' }));
+});
+
+test('DEV cannot inherit the approved PRE outbound configuration', () => {
+  assert.throws(() => runtime.buildEnvironment({ ...input, ...approvedPush,
+    TR_DB_DATABASE: 'ontoo_resx_dev', TR_DB_USER: 'ontoo_resx_dev_runtime',
+    TR_DB_TUNNEL_PORT: '13307' }, 'resx-local-dev'));
+});
