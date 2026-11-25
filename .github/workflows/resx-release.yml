@@ -1,0 +1,153 @@
+name: RESX PRE release
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+    inputs:
+      action:
+        type: choice
+        options: [rollback]
+        default: rollback
+        required: true
+      release_id:
+        description: Retained release ID for an authorized rollback; never a manifest or command
+        type: string
+        required: false
+permissions:
+  contents: read
+concurrency:
+  group: resx-pre-release
+  cancel-in-progress: false
+jobs:
+  scope:
+    if: github.ref == 'refs/heads/staging'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      deploy: ${{ steps.impact.outputs.deploy }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Determine release impact without acquiring credentials
+        id: impact
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          node <<'NODE'
+          const fs=require('node:fs'),c=require('./bin/resx-cicd.cjs');
+          const event=JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH,'utf8'));
+          let deploy=true;
+          if(event.before&&/^[a-f0-9]{40}$/.test(event.before)&&!/^0+$/.test(event.before)) {
+            const files=c.changedFiles(event.before,process.env.GITHUB_SHA);
+            if(files.length)deploy=!c.classify(files).documentationOnly;
+          }
+          fs.appendFileSync(process.env.GITHUB_OUTPUT,'deploy='+deploy+'\n');
+          NODE
+  enrollment:
+    needs: scope
+    if: github.ref == 'refs/heads/staging' && needs.scope.outputs.deploy == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require independently installed PRE controls
+        env:
+          ENROLLED: ${{ vars.RESX_PRE_ENROLLED }}
+        run: test "$ENROLLED" = true
+  image:
+    needs: enrollment
+    if: github.ref == 'refs/heads/staging' && inputs.action != 'rollback' && vars.RESX_PRE_ENROLLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    outputs:
+      release_id: ${{ steps.receipt.outputs.release_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Export immutable allowlisted build context
+        run: python3 -B bin/resx-export-context.py "$GITHUB_SHA" "$RUNNER_TEMP/resx-context.tar"
+      - name: Build immutable image
+        run: |
+          docker build --platform linux/amd64 --file deploy/resx/Dockerfile \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --iidfile "$RUNNER_TEMP/resx-image.id" --tag "resx-ci:$GITHUB_SHA" - < "$RUNNER_TEMP/resx-context.tar"
+      - name: Qualify native modules without DB, network or secrets
+        run: |
+          image=$(cat "$RUNNER_TEMP/resx-image.id")
+          test "$(docker image inspect --format '{{.Config.User}}' "$image")" = '10001:10001'
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --user 10001:10001 --memory 256m --cpus .5 --pids-limit 64 --entrypoint node "$image" \
+            -e "const b=require('bcrypt');if(!b.compareSync('synthetic',b.hashSync('synthetic',4)))process.exit(1);require('mysql2');require('./bin/resx-runtime-profile.cjs');"
+          mkdir "$RUNNER_TEMP/resx-artifact"
+          docker save --output "$RUNNER_TEMP/resx-artifact/image.tar" "$image"
+      - name: Upload exact image archive
+        id: image
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: resx-image-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/resx-artifact/image.tar
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error
+      - name: Bind image artifact to source and run
+        id: receipt
+        env:
+          IMAGE_ARTIFACT_ID: ${{ steps.image.outputs.artifact-id }}
+        run: |
+          python3 - <<'PY'
+          import hashlib,json,os,re
+          from pathlib import Path
+          root=Path(os.environ['RUNNER_TEMP']);image=(root/'resx-image.id').read_text().strip()
+          assert re.fullmatch(r'sha256:[a-f0-9]{64}',image)
+          archive=root/'resx-artifact/image.tar';size=archive.stat().st_size
+          assert 0<size<=512*1024*1024
+          with archive.open('rb') as stream:digest=hashlib.file_digest(stream,'sha256').hexdigest()
+          assert re.fullmatch(r'[1-9][0-9]*',os.environ['IMAGE_ARTIFACT_ID'])
+          receipt={'repositoryId':'795522855','sourceSha':os.environ['GITHUB_SHA'],
+              'runId':os.environ['GITHUB_RUN_ID'],'runAttempt':int(os.environ['GITHUB_RUN_ATTEMPT']),
+              'artifactId':os.environ['IMAGE_ARTIFACT_ID'],'archiveSha256':digest,'archiveBytes':size,'imageId':image}
+          data=json.dumps(receipt,sort_keys=True,separators=(',',':')).encode()
+          (root/'resx-release-receipt.json').write_bytes(data)
+          with open(os.environ['GITHUB_OUTPUT'],'a') as stream:stream.write('release_id='+hashlib.sha256(data).hexdigest()+'\n')
+          PY
+      - name: Upload separate bound receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: resx-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/resx-release-receipt.json
+          retention-days: 7
+          if-no-files-found: error
+  request:
+    if: always() && github.ref == 'refs/heads/staging' && vars.RESX_PRE_ENROLLED == 'true' && (needs.image.result == 'success' || (inputs.action == 'rollback' && needs.image.result == 'skipped'))
+    needs: image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: hosting-pre
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Submit constrained authenticated request
+        env:
+          ACTION: ${{ inputs.action || 'deploy' }}
+          RELEASE_ID: ${{ needs.image.outputs.release_id || inputs.release_id }}
+        run: |
+          node <<'NODE'
+          (async()=>{try {
+            const action=process.env.ACTION,releaseId=process.env.RELEASE_ID;
+            if(!['deploy','rollback'].includes(action)||!/^[a-f0-9]{64}$/.test(releaseId||''))throw Error();
+            const url=new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);url.searchParams.set('audience','ontoo-resx-pre');
+            const tokenResponse=await fetch(url,{headers:{Authorization:'Bearer '+process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN},signal:AbortSignal.timeout(15000),redirect:'error'});
+            if(!tokenResponse.ok)throw Error();const token=(await tokenResponse.json()).value;if(typeof token!=='string')throw Error();
+            const response=await fetch('https://resx-preview.ontoo.cloud/.well-known/ontoo-release/resx-pre',{
+              method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+              body:JSON.stringify({action,releaseId}),redirect:'error',signal:AbortSignal.timeout(30000)});
+            if(response.status!==202)throw Error();
+            console.log('Authenticated request accepted for independent validation; this is NOT deployment success.');
+          }catch{console.error('RESX_RELEASE_REQUEST_REJECTED');process.exitCode=1;}})();
+          NODE
+# The receiver waits for this run's successful terminal conclusion and independent
+# artifact/promotion/config/schema evidence before any controller mutation.
+# Only protected terminal release evidence and public smoke establish success.

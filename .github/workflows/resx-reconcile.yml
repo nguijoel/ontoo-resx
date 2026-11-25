@@ -1,0 +1,39 @@
+name: RESX protected merge and promotion
+on:
+  workflow_run:
+    workflows: ['RESX validation']
+    types: [completed]
+  pull_request_target:
+    branches: [dev, staging]
+    types: [ready_for_review, reopened]
+  check_run:
+    types: [completed]
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: resx-protected-reconcile
+  cancel-in-progress: false
+jobs:
+  reconcile:
+    if: github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+      checks: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: refs/heads/dev
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.23.5'
+      - name: Reconcile exact protected source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESX_POLICY_APP_ID: ${{ vars.RESX_POLICY_APP_ID }}
+        run: node bin/resx-reconcile.cjs
+# No candidate checkout, package install, arbitrary script or deployment credential.
