@@ -39,7 +39,7 @@ function fixture(prs = []) {
     calls,
     api: async (path, body) => {
       calls.push({ path, body });
-      if (body) return {};
+      if (body) return path.endsWith('/merge') ? { merged: true, sha: 'f'.repeat(40) } : {};
       if (path === '')
         return {
           id: 795522855,
@@ -107,38 +107,43 @@ test('native staging merge receives a no-content ancestry sync, not an endless p
   assert.equal(create.body.base, 'dev');
 });
 
-test('native clean PR enables auto-merge; already enabled is idempotent', async () => {
-  for (const alreadyEnabled of [false, true]) {
-    const pr = {
-      number: 7,
-      mergeable: true,
-      mergeable_state: 'clean',
-      draft: false,
-      state: 'open',
-      node_id: 'synthetic-node',
-      auto_merge: alreadyEnabled ? { enabled_by: { login: 'github-actions' } } : null,
-      base: { ref: 'dev', sha: old, repo: { id: 795522855, full_name: 'nguijoel/ontoo-resx' } },
-      user: { id: 360355133, type: 'Bot' },
-      changed_files: 1,
-      head: { sha: head, ref: 'codex/change', repo: { id: 795522855, full_name: 'nguijoel/ontoo-resx' } },
-    };
-    const f = fixture([pr]),
-      original = f.api;
-    f.api = async (path, body, ...rest) => {
-      if (path === '/git/ref/heads/dev') return { object: { sha: old } };
-      if (path.startsWith('/commits/')) {
-        const result = checks('dev');
-        return result;
-      }
-      if (path === '/pulls/7/files?per_page=100') return [{ status: 'modified', filename: require('./resx-risk.cjs').CSS }];
-      if (path.startsWith('/contents/'))
-        return { encoding: 'base64', size: 40, content: Buffer.from('.search-icon {font-size:1.25rem;}').toString('base64') };
-      if (path === '/pulls/7') return pr;
-      return original(path, body, ...rest);
-    };
-    await reconcile({ ...f, policyApp, validatedRun: null });
-    assert.equal(f.calls.filter(x => x.path === '/graphql-enable-auto-merge').length, alreadyEnabled ? 0 : 1);
-  }
+test('ready PR uses exact-head native merge for clean or optional-check unstable state; already armed remains native', async () => {
+  for (const state of ['clean', 'unstable', 'blocked', 'behind', 'dirty', 'unknown'])
+    for (const alreadyEnabled of [false, true]) {
+      const pr = {
+        number: 7,
+        mergeable: true,
+        mergeable_state: state,
+        draft: false,
+        state: 'open',
+        node_id: 'synthetic-node',
+        auto_merge: alreadyEnabled ? { enabled_by: { login: 'github-actions' } } : null,
+        base: { ref: 'dev', sha: old, repo: { id: 795522855, full_name: 'nguijoel/ontoo-resx' } },
+        user: { id: 360355133, type: 'Bot' },
+        changed_files: 1,
+        head: { sha: head, ref: 'codex/change', repo: { id: 795522855, full_name: 'nguijoel/ontoo-resx' } },
+      };
+      const f = fixture([pr]),
+        original = f.api;
+      const merges = [];
+      f.api = async (path, body, ...rest) => {
+        if (path === '/pulls/7/merge') merges.push({ body, method: rest[1] });
+        if (path === '/git/ref/heads/dev') return { object: { sha: old } };
+        if (path.startsWith('/commits/')) {
+          const result = checks('dev');
+          return result;
+        }
+        if (path === '/pulls/7/files?per_page=100') return [{ status: 'modified', filename: require('./resx-risk.cjs').CSS }];
+        if (path.startsWith('/contents/'))
+          return { encoding: 'base64', size: 40, content: Buffer.from('.search-icon {font-size:1.25rem;}').toString('base64') };
+        if (path === '/pulls/7') return pr;
+        return original(path, body, ...rest);
+      };
+      await reconcile({ ...f, policyApp, validatedRun: null });
+      assert.equal(merges.length, !alreadyEnabled && ['clean', 'unstable'].includes(state) ? 1 : 0);
+      if (merges.length) assert.deepEqual(merges[0], { body: { sha: head, merge_method: 'merge' }, method: 'PUT' });
+      assert.equal(f.calls.filter(x => x.path === '/graphql-enable-auto-merge').length, 0);
+    }
 });
 
 test('no qualified PR creator means no promotion PR or dispatch is created', async () => {
@@ -428,4 +433,67 @@ test('already-synced identical trees are a no-op, not another promotion or sync'
         : original(path, ...args);
   await reconcile({ ...f, validatedRun: run });
   assert.equal(f.calls.filter(x => x.body).length, 0);
+});
+
+test('actual main HTTP adapter preserves PUT and exact SHA for an eligible ready merge', async () => {
+  const fs = require('node:fs'),
+    os = require('node:os'),
+    path = require('node:path');
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'resx-native-http-'));
+  const event = path.join(directory, 'event.json');
+  fs.writeFileSync(event, '{}');
+  const keys = ['GITHUB_REPOSITORY', 'GITHUB_REF', 'GITHUB_EVENT_PATH', 'GH_TOKEN', 'GH_APP_TOKEN', 'GH_RISK_TOKEN', 'RESX_PRE_ENROLLED'];
+  const before = Object.fromEntries(keys.map(k => [k, process.env[k]]));
+  const originalFetch = globalThis.fetch;
+  const pr = {
+    number: 7,
+    mergeable: true,
+    mergeable_state: 'clean',
+    draft: false,
+    state: 'open',
+    auto_merge: null,
+    base: { ref: 'dev', sha: old, repo: { id: 795522855, full_name: 'nguijoel/ontoo-resx' } },
+    head: { ref: 'codex/change', sha: head, repo: { id: 795522855, full_name: 'nguijoel/ontoo-resx' } },
+    user: { id: 360355133, type: 'Bot' },
+    changed_files: 1,
+  };
+  const f = fixture([pr]),
+    merges = [];
+  try {
+    for (const k of keys) delete process.env[k];
+    Object.assign(process.env, {
+      GITHUB_REPOSITORY: 'nguijoel/ontoo-resx',
+      GITHUB_REF: 'refs/heads/dev',
+      GITHUB_EVENT_PATH: event,
+      GH_TOKEN: 'synthetic-workflow-token',
+    });
+    globalThis.fetch = async (url, options) => {
+      const parsed = new URL(url);
+      assert.equal(parsed.origin, 'https://api.github.com');
+      const route = (parsed.pathname.replace('/repos/nguijoel/ontoo-resx', '') + parsed.search).replace(/&page=\d+$/, '');
+      let value;
+      if (route === '/pulls/7/merge') {
+        merges.push({ method: options.method, body: JSON.parse(options.body) });
+        value = { merged: true, sha: 'f'.repeat(40) };
+      } else if (route === '/git/ref/heads/dev') value = { object: { sha: old } };
+      else if (route.startsWith('/actions/workflows/resx-ci.yml/runs?')) value = { workflow_runs: [] };
+      else if (route.startsWith('/commits/')) value = { check_runs: checks('dev') };
+      else if (route === '/pulls/7/files?per_page=100') value = [{ status: 'modified', filename: require('./resx-risk.cjs').CSS }];
+      else if (route.startsWith('/contents/'))
+        value = { encoding: 'base64', size: 40, content: Buffer.from('.search-icon {font-size:1.25rem;}').toString('base64') };
+      else if (route === '/pulls/7') value = pr;
+      else value = await f.api(route);
+      return new Response(JSON.stringify(value), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    };
+    await require('./resx-reconcile.cjs').main();
+    assert.deepEqual(merges, [{ method: 'PUT', body: { sha: head, merge_method: 'merge' } }]);
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (const k of keys) {
+      if (before[k] === undefined) delete process.env[k];
+      else process.env[k] = before[k];
+    }
+    fs.unlinkSync(event);
+    fs.rmdirSync(directory);
+  }
 });
