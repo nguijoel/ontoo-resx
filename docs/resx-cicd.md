@@ -179,8 +179,16 @@ archive-parser work remains evidence only and is not the default release path.
 The local merge-handoff implementation addresses workflow-token-suppressed push
 events: after current-tip merged-PR and required-protection checks, it detects
 existing integration/release runs or writes a bot-authored PR-comment reservation
-before dispatch. A reserved operation is not blindly retried after an uncertain
-response. Both consumers reject a moved `expected_sha`; staging dispatch still
+before dispatch. A visible reservation blocks another dispatch after an uncertain
+dispatch response. An ambiguous comment-creation response can cause a later
+metadata retry when no reservation is visible; it is not exactly-once authority.
+The locked root controller must deduplicate an already-current, independently
+verified healthy source/config/physical-target binding even across different run
+or image IDs, and preserve in-flight/UNKNOWN barriers. Drift must never be reported
+as a successful no-op; historical source/config is not permanently banned because
+authorized rollback must remain possible.
+Both consumers bind the dispatch snapshot via `expected_sha`; the receiver must
+also recheck live protected refs before mutation. Staging dispatch still
 requires independently enrolled actor/control/promotion admission at the receiver.
 Dispatch CI never counts as PR-required validation. Exact GitHub Actions bot
 identity was read from the public API as `github-actions[bot]`, ID `41898282`;

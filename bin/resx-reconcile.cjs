@@ -160,8 +160,10 @@ async function reconcile({ api, policyApp, validatedRun, createPullRequest }) {
   // Existing promotion: no repeat dispatch, preventing workflow_run recursion.
 }
 // Recover token-suppressed push events. This schedules work; it never authorizes
-// a merge or deployment. A durable bot-authored intent prevents blind redispatch
-// after an uncertain API result. The worker validates the exact SHA again.
+// a merge or deployment. A visible bot-authored intent prevents redispatch
+// after an uncertain dispatch result. Comment-creation ambiguity can cause a
+// metadata retry; only the locked controller enforces deployment idempotency.
+// The worker validates the exact SHA again.
 async function recoverMergeHandoff({ api, policyApp, automationActorId, enrolled }) {
   if (!enrolled) return;
   assert(Number.isSafeInteger(policyApp) && policyApp > 0 && policyApp !== CI_APP);
