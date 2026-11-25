@@ -1,15 +1,95 @@
 'use strict';
-const test=require('node:test'),assert=require('node:assert/strict');
-const {requiredChecks,successful,reconcile}=require('./resx-reconcile.cjs');
-const head='a'.repeat(40),old='b'.repeat(40),policyApp=999;
-function protection(branch){return {enforce_admins:{enabled:true},required_pull_request_reviews:{},allow_force_pushes:{enabled:false},allow_deletions:{enabled:false},required_conversation_resolution:{enabled:true},required_status_checks:{strict:true,checks:[{context:'RESX CI',app_id:15368},{context:'ONTOO policy eligibility '+branch,app_id:policyApp}]}};}
-function checks(branch){return [{id:1,name:'RESX CI',head_sha:head,status:'completed',conclusion:'success',app:{id:15368}},{id:2,name:'ONTOO policy eligibility '+branch,head_sha:head,status:'completed',conclusion:'success',app:{id:policyApp}}];}
-test('native protection must bind independent publisher and correct destination',()=>{requiredChecks(protection('dev'),policyApp,'dev');assert.throws(()=>requiredChecks(protection('dev'),policyApp,'staging'));const p=protection('dev');p.required_status_checks.checks[1].app_id=15368;assert.throws(()=>requiredChecks(p,policyApp,'dev'));});
-test('latest failure or pending check defeats stale success; destination cannot reuse approval',()=>{assert.ok(successful(checks('dev'),head,policyApp,'dev'));assert.equal(successful(checks('dev'),head,policyApp,'staging'),false);for(const change of [{conclusion:'failure'},{status:'in_progress',conclusion:null}])assert.equal(successful([...checks('dev'),{...checks('dev')[1],id:3,...change}],head,policyApp,'dev'),false);});
-function fixture(prs=[]){const calls=[];return {calls,api:async(path,body)=>{calls.push({path,body});if(body)return {};if(path==='')return {id:795522855,full_name:'nguijoel/ontoo-resx',default_branch:'dev',allow_auto_merge:true};if(path.includes('/protection'))return protection(path.includes('/dev/')?'dev':'staging');if(path==='/git/ref/heads/dev')return {object:{sha:head}};if(path==='/git/ref/heads/staging')return {object:{sha:old}};if(path.startsWith('/pulls?'))return prs;if(path.startsWith('/actions/workflows/'))return {path:'.github/workflows/resx-ci.yml'};if(path.startsWith('/git/commits/'))return {tree:{sha:path.endsWith(head)?'c'.repeat(40):'d'.repeat(40)}};if(path.startsWith('/compare/'))return {status:'ahead',merge_base_commit:{sha:old}};throw Error('unexpected fixed path');}};}
-const run={id:1,workflow_id:2,head_branch:'dev',head_sha:head,conclusion:'success',repository:{id:795522855}};
-test('validated current dev creates promotion PR and explicitly dispatches CI once',async()=>{const f=fixture();await reconcile({...f,policyApp,validatedRun:run});assert.equal(f.calls.filter(x=>x.path==='/pulls'&&x.body).length,1);assert.equal(f.calls.filter(x=>x.path.endsWith('/dispatches')).length,1);});
-test('existing draft promotion never merges or recursively redispatches',async()=>{const f=fixture([{draft:true,base:{ref:'staging'},head:{ref:'dev',sha:head,repo:{id:795522855}}}]);await reconcile({...f,policyApp,validatedRun:run});assert.equal(f.calls.filter(x=>x.body).length,0);});
-test('unvalidated, stale and missing publisher inputs never promote',async()=>{for(const validatedRun of [null,{...run,head_sha:old},{...run,conclusion:'failure'}]){const f=fixture();await reconcile({...f,policyApp,validatedRun});assert.equal(f.calls.filter(x=>x.body).length,0);}await assert.rejects(reconcile({...fixture(),policyApp:15368,validatedRun:run}));});
+const test = require('node:test'),
+  assert = require('node:assert/strict');
+const { requiredChecks, successful, reconcile } = require('./resx-reconcile.cjs');
+const head = 'a'.repeat(40),
+  old = 'b'.repeat(40),
+  policyApp = 999;
+function protection(branch) {
+  return {
+    enforce_admins: { enabled: true },
+    required_pull_request_reviews: {},
+    allow_force_pushes: { enabled: false },
+    allow_deletions: { enabled: false },
+    required_conversation_resolution: { enabled: true },
+    required_status_checks: {
+      strict: true,
+      checks: [
+        { context: 'RESX CI', app_id: 15368 },
+        { context: 'ONTOO policy eligibility ' + branch, app_id: policyApp },
+      ],
+    },
+  };
+}
+function checks(branch) {
+  return [
+    { id: 1, name: 'RESX CI', head_sha: head, status: 'completed', conclusion: 'success', app: { id: 15368 } },
+    { id: 2, name: 'ONTOO policy eligibility ' + branch, head_sha: head, status: 'completed', conclusion: 'success', app: { id: policyApp } },
+  ];
+}
+test('native protection must bind independent publisher and correct destination', () => {
+  requiredChecks(protection('dev'), policyApp, 'dev');
+  assert.throws(() => requiredChecks(protection('dev'), policyApp, 'staging'));
+  const p = protection('dev');
+  p.required_status_checks.checks[1].app_id = 15368;
+  assert.throws(() => requiredChecks(p, policyApp, 'dev'));
+});
+test('latest failure or pending check defeats stale success; destination cannot reuse approval', () => {
+  assert.ok(successful(checks('dev'), head, policyApp, 'dev'));
+  assert.equal(successful(checks('dev'), head, policyApp, 'staging'), false);
+  for (const change of [{ conclusion: 'failure' }, { status: 'in_progress', conclusion: null }])
+    assert.equal(successful([...checks('dev'), { ...checks('dev')[1], id: 3, ...change }], head, policyApp, 'dev'), false);
+});
+function fixture(prs = []) {
+  const calls = [];
+  return {
+    calls,
+    api: async (path, body) => {
+      calls.push({ path, body });
+      if (body) return {};
+      if (path === '') return { id: 795522855, full_name: 'nguijoel/ontoo-resx', default_branch: 'dev', allow_auto_merge: true };
+      if (path.includes('/protection')) return protection(path.includes('/dev/') ? 'dev' : 'staging');
+      if (path === '/git/ref/heads/dev') return { object: { sha: head } };
+      if (path === '/git/ref/heads/staging') return { object: { sha: old } };
+      if (path.startsWith('/pulls?')) return prs;
+      if (path.startsWith('/actions/workflows/')) return { path: '.github/workflows/resx-ci.yml' };
+      if (path.startsWith('/git/commits/')) return { tree: { sha: path.endsWith(head) ? 'c'.repeat(40) : 'd'.repeat(40) } };
+      if (path.startsWith('/compare/')) return { status: 'ahead', merge_base_commit: { sha: old } };
+      throw Error('unexpected fixed path');
+    },
+  };
+}
+const run = { id: 1, workflow_id: 2, head_branch: 'dev', head_sha: head, conclusion: 'success', repository: { id: 795522855 } };
+test('validated current dev creates promotion PR and explicitly dispatches CI once', async () => {
+  const f = fixture();
+  await reconcile({ ...f, policyApp, validatedRun: run });
+  assert.equal(f.calls.filter(x => x.path === '/pulls' && x.body).length, 1);
+  assert.equal(f.calls.filter(x => x.path.endsWith('/dispatches')).length, 1);
+});
+test('existing draft promotion never merges or recursively redispatches', async () => {
+  const f = fixture([{ draft: true, base: { ref: 'staging' }, head: { ref: 'dev', sha: head, repo: { id: 795522855 } } }]);
+  await reconcile({ ...f, policyApp, validatedRun: run });
+  assert.equal(f.calls.filter(x => x.body).length, 0);
+});
+test('unvalidated, stale and missing publisher inputs never promote', async () => {
+  for (const validatedRun of [null, { ...run, head_sha: old }, { ...run, conclusion: 'failure' }]) {
+    const f = fixture();
+    await reconcile({ ...f, policyApp, validatedRun });
+    assert.equal(f.calls.filter(x => x.body).length, 0);
+  }
+  await assert.rejects(reconcile({ ...fixture(), policyApp: 15368, validatedRun: run }));
+});
 
-test('native staging merge receives a no-content ancestry sync, not an endless promotion',async()=>{const f=fixture();const original=f.api;f.api=async(path,body,...rest)=>{if(path.startsWith('/git/commits/'))return {tree:{sha:'c'.repeat(40)}};if(path.startsWith('/compare/'))return {status:'ahead',merge_base_commit:{sha:head}};return original(path,body,...rest);};await reconcile({...f,policyApp,validatedRun:{...run,head_branch:'staging',head_sha:old}});const create=f.calls.find(x=>x.path==='/pulls'&&x.body);assert.equal(create.body.head,'staging');assert.equal(create.body.base,'dev');});
+test('native staging merge receives a no-content ancestry sync, not an endless promotion', async () => {
+  const f = fixture();
+  const original = f.api;
+  f.api = async (path, body, ...rest) => {
+    if (path.startsWith('/git/commits/')) return { tree: { sha: 'c'.repeat(40) } };
+    if (path.startsWith('/compare/')) return { status: 'ahead', merge_base_commit: { sha: head } };
+    return original(path, body, ...rest);
+  };
+  await reconcile({ ...f, policyApp, validatedRun: { ...run, head_branch: 'staging', head_sha: old } });
+  const create = f.calls.find(x => x.path === '/pulls' && x.body);
+  assert.equal(create.body.head, 'staging');
+  assert.equal(create.body.base, 'dev');
+});

@@ -1,6 +1,9 @@
-# RESX Git-to-PRE delivery implementation
+# ONTOO Git-to-PRE baseline: RESX first enrollment
 
-Scope: nguijoel/ontoo-resx, repository795522855, dev -> staging -> PRE.
+The CI/promotion/admission/rollback standard applies across ONTOO repositories.
+This first enrollment is nguijoel/ontoo-resx, repository795522855, dev -> staging -> PRE.
+Common controls are profile-driven; enrolling another repository is explicit,
+not permission to reuse RESX identities, runtime targets or credentials.
 Main/PROD excluded. Existing PR6 is the application candidate; no separate
 product/demo change. CI/CD-POC-001 remains the acceptance contract.
 
@@ -54,8 +57,12 @@ needs exact independently reviewed scope evidence. No secrets in CI/evidence.
 | Rollback/recovery | Retained compatible predecessor contract | Pending |
 | Invalid/unauthorized request | Infra synthetic OIDC tests reported | Real verifier/receiver pending |
 
-Deploy ran11 Node control/orchestration tests +2 Python pattern tests successfully.
-Workflow YAML parsed with js-yaml. Local source tests are not release acceptance.
+Deploy ran15 Node control/orchestration tests +2 Python pattern tests successfully,
+including a synthetic second repository and cross-profile identity rejection.
+Workflow YAML parsed with js-yaml. The exporter reproduced the known deployed
+2d749 source archive byte-for-byte:328files/1955840tarbytes/SHA256
+e4a3f3126d5cd902960c8e95f63710561f1727868c7ff05d8afe2b82f8e26c04.
+Local source tests are not release acceptance.
 Add actual GitHub run/PR/check IDs, installed digests, terminal protected receipts,
 artifact/source/config/schema bindings and public health before claiming completion.
 

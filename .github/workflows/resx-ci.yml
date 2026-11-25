@@ -97,4 +97,5 @@ jobs:
           else
             test "$APPLICATION_RESULT" = success
           fi
+
 # No approval, registry, database, merge, OIDC or host credentials in PR validation.

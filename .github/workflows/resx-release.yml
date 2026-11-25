@@ -148,6 +148,7 @@ jobs:
             console.log('Authenticated request accepted for independent validation; this is NOT deployment success.');
           }catch{console.error('RESX_RELEASE_REQUEST_REJECTED');process.exitCode=1;}})();
           NODE
+
 # The receiver waits for this run's successful terminal conclusion and independent
 # artifact/promotion/config/schema evidence before any controller mutation.
 # Only protected terminal release evidence and public smoke establish success.

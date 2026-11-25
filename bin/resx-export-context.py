@@ -26,6 +26,9 @@ def export(source,output):
  manifest_raw=git('show',source+':deploy/resx/build-inputs.json');manifest=json.loads(manifest_raw)
  require(manifest['version']==1 and manifest['platform']=='linux/amd64')
  require(manifest['baseImage']=='docker.io/library/node@sha256:47725aca53d3295ec2d3be8f62726599b3033cc262edc2c7e429909b3ac599fc')
+ dockerfile=git('show',source+':deploy/resx/Dockerfile').decode('utf8')
+ bases=re.findall(r'^FROM\s+([^\s]+)(?:\s+AS\s+[a-zA-Z0-9_-]+)?\s*$',dockerfile,re.M|re.I)
+ require(len(bases)==2 and all(base==manifest['baseImage'] for base in bases))
  entries=git('ls-tree','-rz','--full-tree',source).split(b'\0');inventory=[];total=0
  # Output is an exclusive new file. No deletion, adoption or recursive cleanup.
  with Path(output).open('xb') as stream:
@@ -37,7 +40,7 @@ def export(source,output):
     require(kind=='blob' and mode in ('100644','100755'))
     data=git('cat-file','blob',oid);total+=len(data)
     require(total<=32*1024*1024 and len(inventory)<5000)
-    info=tarfile.TarInfo(name);info.size=len(data);info.mode=0o644;info.mtime=0;info.uid=info.gid=0;info.uname=info.gname=''
+    info=tarfile.TarInfo(name);info.size=len(data);info.mode=0o755 if mode=='100755' else 0o644;info.mtime=0;info.uid=info.gid=0;info.uname=info.gname=''
     archive.addfile(info,io.BytesIO(data));inventory.append({'path':name,'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()})
  require({'deploy/resx/Dockerfile','deploy/resx/Dockerfile.dockerignore','deploy/resx/build-inputs.json','package.json','yarn.lock'}.issubset({x['path'] for x in inventory}))
  with Path(output).open('rb') as stream:context_sha=hashlib.file_digest(stream,'sha256').hexdigest()
