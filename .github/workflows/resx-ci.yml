@@ -1,0 +1,196 @@
+name: RESX validation
+on:
+  pull_request:
+    branches: [dev, staging]
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
+  push:
+    branches: [dev, staging]
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Exact integration tip selected by protected merge handoff
+        type: string
+        required: false
+permissions:
+  contents: read
+concurrency:
+  group: resx-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  source:
+    name: RESX source controls
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      documentation: ${{ steps.scope.outputs.documentation }}
+    steps:
+      - name: Reject moved integration handoff
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          if [ -n "$EXPECTED_SHA" ]; then
+            [[ "$EXPECTED_SHA" =~ ^[a-f0-9]{40}$ ]] && test "$EXPECTED_SHA" = "$GITHUB_SHA"
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.23.5'
+      - run: node --test bin/resx-cicd.test.cjs bin/resx-reconcile.test.cjs bin/resx-risk.test.cjs bin/resx-release.test.cjs
+      - run: python3 -B bin/resx-export-context.test.py
+      - name: Validate full diff and promotion route
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          node <<'NODE'
+          const fs=require('node:fs'),cp=require('node:child_process');
+          const c=require('./bin/resx-cicd.cjs');
+          const event=JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH,'utf8'));
+          if(event.pull_request)c.sourceRoute(event.pull_request);
+          const git=(...args)=>cp.execFileSync('git',args,{encoding:'utf8'}).trim();
+          const tree=sha=>git('rev-parse',sha+'^{tree}');
+          let base=process.env.BASE_SHA;
+          if(!/^[a-f0-9]{40}$/.test(base||'')||/^0+$/.test(base))base=git('rev-parse',process.env.HEAD_SHA+'^1');
+          const files=c.changedFiles(base,process.env.HEAD_SHA);
+          let scope;
+          if(files.length)scope=c.classify(files);
+          else if(event.pull_request){
+            if(event.pull_request.base.ref!=='dev'||event.pull_request.head.ref!=='staging'||tree(base)!==tree(process.env.HEAD_SHA))throw Error('EMPTY_PR_REJECTED');
+            git('merge-base','--is-ancestor',base,process.env.HEAD_SHA);
+            scope={protected:false,documentationOnly:true,fileCount:0,ancestryOnly:true};
+          }else{
+            const parents=git('rev-list','--parents','-n','1',process.env.HEAD_SHA).split(' ').slice(1);
+            const noContentSync=parents.length===2&&parents.every(p=>tree(p)===tree(process.env.HEAD_SHA));
+            scope={protected:!noContentSync,documentationOnly:noContentSync,fileCount:0,ancestryOnly:noContentSync};
+          }
+          fs.appendFileSync(process.env.GITHUB_OUTPUT,`documentation=${scope.documentationOnly}\n`);
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,JSON.stringify({source:process.env.HEAD_SHA,base,...scope})+'\nNative protected branches and CODEOWNERS remain the approval authority.\n');
+          NODE
+  application:
+    name: RESX application tests and build
+    needs: source
+    if: needs.source.outputs.documentation != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CI: 'true'
+      HUSKY: '0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.23.5'
+      - name: Install exact lock
+        run: |
+          corepack enable
+          corepack prepare yarn@1.22.22 --activate
+          yarn install --frozen-lockfile --non-interactive
+      - name: Profile and TLS regressions (synthetic only)
+        run: node --test bin/resx-phase1.test.cjs bin/resx-runtime.test.cjs bin/resx-dev.test.cjs
+      - name: API unit tests
+        run: yarn --cwd api test
+      - name: API build
+        run: yarn build:api
+      - name: Preview SPA build
+        run: yarn --cwd webapp ng build --configuration=preview
+  image:
+    name: RESX Linux image qualification
+    needs: [source, application]
+    if: needs.source.outputs.documentation != 'true' && needs.application.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Export immutable source without checkout configuration
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python3 -B bin/resx-export-context.py "$SOURCE_SHA" "$RUNNER_TEMP/resx-qualified-context.tar"
+      - name: Build secret-free Linux candidate
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          docker build --platform linux/amd64 --file deploy/resx/Dockerfile \
+            --label "org.opencontainers.image.revision=$SOURCE_SHA" \
+            --iidfile "$RUNNER_TEMP/resx-qualified-image.id" - < "$RUNNER_TEMP/resx-qualified-context.tar"
+      - name: Qualify native modules and inspect archive format
+        run: |
+          image=$(cat "$RUNNER_TEMP/resx-qualified-image.id")
+          test "$(docker image inspect --format '{{.Config.User}}' "$image")" = '10001:10001'
+          test "$(docker image inspect --format '{{.Config.WorkingDir}}' "$image")" = '/opt/resx'
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --user 10001:10001 --memory 256m --cpus .5 --pids-limit 64 --entrypoint node "$image" \
+            -e "const b=require('bcrypt');if(!b.compareSync('synthetic',b.hashSync('synthetic',4)))process.exit(1);require('mysql2');require('./bin/resx-runtime-profile.cjs');"
+          docker save --output "$RUNNER_TEMP/resx-qualified-image.tar" "$image"
+          python3 - <<'PY'
+          import hashlib,json,os,re,tarfile
+          from pathlib import Path
+          archive=Path(os.environ['RUNNER_TEMP'])/'resx-qualified-image.tar'
+          with tarfile.open(archive) as tar:
+              names=tar.getnames()
+              print(json.dumps({'manifestBased':'manifest.json' in names,'ociIndex':'index.json' in names,
+                  'archiveBytes':archive.stat().st_size,'entries':len(names)}))
+              members=tar.getmembers()
+              if len(members)>1000: raise ValueError('Archive inventory exceeds bound')
+              def path(value):
+                  if not isinstance(value,str) or not re.fullmatch(r'[A-Za-z0-9_./-]{1,256}',value):
+                      raise ValueError('Archive inventory path rejected')
+                  if value.startswith('/') or '..' in value.split('/'): raise ValueError('Unsafe archive path')
+                  return value
+              print(json.dumps({'members':[{'name':path(m.name),'type':'file' if m.isfile() else 'directory' if m.isdir() else 'other','bytes':m.size} for m in members]}))
+              def metadata(name):
+                  member=tar.getmember(name)
+                  if not member.isfile() or member.size>1048576: raise ValueError('Metadata exceeds bound')
+                  return json.loads(tar.extractfile(member).read())
+              if 'manifest.json' in names:
+                  manifest=metadata('manifest.json')
+                  if not isinstance(manifest,list) or len(manifest)!=1: raise ValueError('Image manifest rejected')
+                  config=tar.getmember(path(manifest[0]['Config']))
+                  if not config.isfile() or config.size>1048576: raise ValueError('Image config exceeds bound')
+                  print(json.dumps({'manifestConfig':config.name,'configSha256':hashlib.sha256(tar.extractfile(config).read()).hexdigest(),
+                      'manifestLayers':[path(p) for p in manifest[0]['Layers']]}))
+              if 'oci-layout' in names:
+                  print(json.dumps({'ociLayoutVersion':metadata('oci-layout').get('imageLayoutVersion')}))
+              if 'index.json' in names:
+                  index=metadata('index.json')
+                  descriptors=index.get('manifests',[])
+                  if len(descriptors)>100: raise ValueError('OCI descriptor inventory exceeds bound')
+                  print(json.dumps({'ociSchemaVersion':index.get('schemaVersion'),'ociDescriptors':[
+                      {key:d.get(key) for key in ('mediaType','digest','size')} for d in descriptors]}))
+          PY
+      # Qualification only, not a registry publish, DB startup or PRE admission.
+  required:
+    name: RESX CI
+    if: always()
+    needs: [source, application, image]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every applicable check
+        env:
+          SOURCE_RESULT: ${{ needs.source.result }}
+          APPLICATION_RESULT: ${{ needs.application.result }}
+          DOCUMENTATION: ${{ needs.source.outputs.documentation }}
+          IMAGE_RESULT: ${{ needs.image.result }}
+        run: |
+          test "$SOURCE_RESULT" = success
+          if [ "$DOCUMENTATION" = true ]; then
+            test "$APPLICATION_RESULT" = skipped
+            test "$IMAGE_RESULT" = skipped
+          else
+            test "$APPLICATION_RESULT" = success
+            test "$IMAGE_RESULT" = success
+          fi
+
+# No approval, registry, database, merge, OIDC or host credentials in PR validation.

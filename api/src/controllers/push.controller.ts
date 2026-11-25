@@ -3,6 +3,8 @@
  * ONTOO:CONTROLLERS - PushController
  */
 
+import { PushUnavailableException } from '../errors/push-unavailable';
+import { PushFailedException } from '../errors/push-failed';
 import { BadRequestException, Controller, HttpStatus, NotFoundException, Param, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -56,6 +58,7 @@ export class PushController {
   @ApiOperation({ summary: `Pushes all translated terms for a project's locales` })
   @ApiResponse({ status: HttpStatus.OK, description: 'Files pushed' })
   @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: 'Bad request' })
+  @ApiResponse({ status: HttpStatus.SERVICE_UNAVAILABLE, description: 'S3 push is not configured for this environment' })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'Project or locale not found' })
   @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: 'Unauthorized' })
   async pushPost(@Req() req: Request, @Res() res: Response, @Param('projectId') projectId: string, @Query() query: ExportQuery) {
@@ -73,6 +76,8 @@ export class PushController {
     if (!query.format) {
       throw new BadRequestException('format is a required param');
     }
+
+    this.assertPushConfigured();
 
     const where: any = { project: { id: membership.project.id } };
 
@@ -123,19 +128,15 @@ export class PushController {
     return res.status(HttpStatus.OK).send(result);
   }
 
+  private assertPushConfigured() {
+    const required = ['TR_AWS_S3_REGION', 'TR_AWS_ACCESS_KEY_ID', 'TR_AWS_SECRET_ACCESS_KEY', 'TR_AWS_S3_BUCKET'];
+    if (!required.every(key => process.env[key]?.trim())) {
+      throw new PushUnavailableException();
+    }
+  }
+
   private async toS3(items: PushItem[], format: ImportExportFormat): Promise<any> {
-    if (!process.env.TR_AWS_S3_REGION) {
-      throw new BadRequestException('TR_AWS_S3_REGION is required');
-    }
-    if (!process.env.TR_AWS_ACCESS_KEY_ID) {
-      throw new BadRequestException('TR_AWS_ACCESS_KEY_ID is required');
-    }
-    if (!process.env.TR_AWS_SECRET_ACCESS_KEY) {
-      throw new BadRequestException('TR_AWS_SECRET_ACCESS_KEY is required');
-    }
-    if (!process.env.TR_AWS_S3_BUCKET) {
-      throw new BadRequestException('TR_AWS_S3_BUCKET is required');
-    }
+    this.assertPushConfigured();
 
     const client = new S3Client({
       region: process.env.TR_AWS_S3_REGION,
@@ -155,7 +156,12 @@ export class PushController {
         };
 
         const command = new PutObjectCommand(params);
-        await client.send(command);
+        try {
+          await client.send(command);
+        } catch {
+          // SDK failures may carry request metadata; expose no raw error details.
+          throw new PushFailedException('upload');
+        }
 
         return {
           language: e.language,
@@ -231,12 +237,8 @@ export class PushController {
         status: result?.Invalidation?.Status,
         quantity: paths.length,
       };
-    } catch (error) {
-      console.error('CloudFront invalidation failed', error);
-      return {
-        distributionId,
-        error: error?.message || String(error),
-      };
+    } catch {
+      throw new PushFailedException('invalidation');
     }
   }
 
