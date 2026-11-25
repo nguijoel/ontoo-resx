@@ -73,7 +73,7 @@ including currently ownerless prose. No merge or auto-merge operation was run.
 
 The `resx-ci-authoring` environment now exists (ID28557619890), with a custom
 branch policy allowing only `dev` of type `branch`; tags are not allowed. No App
-secret was provisioned by Deploy. The workflow/control increment is still local;
+secret was provisioned by Deploy. The workflow/control increment is not yet installed on the protected bases;
 creation of the environment does not make unmerged workflow source trusted.
 
 ## Transition to risk-based review
@@ -114,6 +114,36 @@ cannot downgrade its own protection through labels or caller booleans. Keep the
 current conservative rule if ownership coverage is incomplete. This transition
 is separate from PRE activation and does not require any deferred live release.
 
+## Controller transport decision (pending owner authorisation)
+
+Fresh Infrastructure host metadata confirms there is no ontoo-deploy identity,
+installed forced-command receiver, deployment sudo policy or unattended Actions
+connection. The approved-releases directory exists but is not a delivery channel.
+Current shared controller is the Media-qualified lineage SHA256
+`622cfcda1d6239515f31742e1ae4dd744e30f6eb90d29d034e625c5dbc010030`;
+never overwrite it with the historical first-RESX controller.
+
+Smallest proposed boundary: one RESX-PRE-only noninteractive SSH identity and
+Infrastructure-custodied key, exposed only to a protected staging-only Actions
+job, with a pinned host key. The server forces a fixed receiver; no general
+shell, PTY, forwarding, agent, X11, user rc or Docker-group access. Any required
+privilege is limited to a no-argument fixed root admission command. The receiver
+must not execute SSH_ORIGINAL_COMMAND or caller-selected commands/paths.
+
+The existing receiver source needs a thin receipt-to-fixed-manifest admission
+adaptation: deploy carries the seven public image receipt fields and the host
+recomputes releaseId; rollback accepts only a retained compatible release ID.
+The host fixes RESX/PRE, target, configuration, DB compatibility, allowed GHCR
+repository/digest, resource bounds, global lock and audit custody. No secret or
+migration instruction is accepted from CI. No new HTTP service, OIDC ingress,
+collector, runner or durable queue is needed. Controller repeat/recovery logic
+must be wired through that entry; installing a key alone does not finish it.
+
+No new deployment identity/key/privilege has been provisioned. This is the exact
+new security boundary requiring owner authorisation; source/admission preparation
+can continue separately. PRE automation stays disabled and the three live release
+proofs remain deferred.
+
 ## Minimum remaining integration
 
 - Verify existing App installation and repository access; Infrastructure provisions
@@ -150,6 +180,11 @@ The original no-AWS profile and TR_SECRET remain the first-release configuration
 optional S3 enablement is a separate configuration release. Smoke uses GET only;
 never POST login/push. Original predecessor health checks do not require its
 nonexistent runtime-info endpoint.
+
+The native control branch was published without opening a PR at source831cbfa;
+fast-feedback run45680652448 completed successfully. This is branch control
+validation only, not a required PR check or deployment proof. Fresh repository
+variable readback found neither authoring nor PRE enrollment enabled.
 
 Historical actual hosted source/app/image CI succeeded on source637e86bf,
 Actions run45552017483. A failed required-check fixture and a draft fixture were
