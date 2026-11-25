@@ -122,15 +122,20 @@ ONTOO_RESX_PRE_DEPLOY_SSH_KEY in staging-only hosting-pre; no private value is
 passed to the app, Git, artifacts or SSH child environment. Temporary key files
 are private and removed in finally.
 
-Deploy input is exactly action+the seven-field receipt. Rollback input is only
-action+retained releaseId; the workflow restricts explicit rollback to authorised
+Deploy input is exactly action+the seven-field receipt. Rollback input selects only a retained releaseId, with the exact current
+sourceSha/runId/runAttempt job provenance (no image/config/path override); the workflow restricts explicit rollback to authorised
 owner6606980. Root binds current/predecessor identity, allowed immutable image,
 source, config/runtime pair, DB ABI, budget, global lock, source/config idempotency,
 health, compatible retention and durable audit before mutation. It independently
 checks current protected source. The client requires an exact healthy terminal
 result and root receiptSha256, and retains only public request/sanitized result.
 A compensation ROLLED_BACK is deployment failure, not success. Explicit successful
-rollback reports action rollback/outcome UPDATED. Unknown outcomes are not retried.
+rollback reports action rollback/outcome UPDATED. Unknown outcomes are not retried. Only an authenticated, strictly typed BUSY
+receipt proving no operation was reserved/pulled/mutated permits up to20 waits
+of15 seconds on the identical request. SSH/network timeout and every other
+negative outcome remain nonretry. The client SSH bound is900 seconds, server
+owned bound at most840 seconds, and native job25 minutes; waiting before stop
+is separate from the planned single-active outage budget.
 
 Current shared controller is Media-qualified622cfcda1d6239515f31742e1ae4dd744e30f6eb90d29d034e625c5dbc010030;
 its existing-RESX update path still needs the selected adapter. Do not overwrite
@@ -139,7 +144,9 @@ activated until the SSH, controller and all release bindings are qualified.
 
 The standing maximum300-second single-active PRE interruption/retained-recovery
 exception is pending owner disposition against GOV-CICD-001 continuity wording.
-No outage is authorised by assumption. The no-AWS profile/TR_SECRET stay paired
+No outage is authorised by assumption. The300-second limit is the planned
+transition budget, not a promise of recovery during host/daemon failure: UNKNOWN
+stops further mutation and can require protected recovery. The no-AWS profile/TR_SECRET stay paired
 with the predecessor; optional S3 enablement is a later protected config release.
 Smoke is GET-only, never POST login/push. Legacy2d749 has no runtime-info endpoint.
 

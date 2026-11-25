@@ -14,11 +14,18 @@ function demand(ok) {
 function canonical(value) {
   return JSON.stringify(Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b, 'en'))));
 }
-function request(action, receipt, releaseId) {
+function request(action, receipt, releaseId, provenance) {
   demand(['deploy', 'rollback'].includes(action));
   if (action === 'rollback') {
-    demand(HEX.test(releaseId || ''));
-    return { packet: { action, releaseId }, releaseId };
+    demand(HEX.test(releaseId || '') && provenance && Object.keys(provenance).sort().join(',') === 'runAttempt,runId,sourceSha');
+    demand(
+      /^[a-f0-9]{40}$/.test(provenance.sourceSha) &&
+        /^[1-9][0-9]{0,19}$/.test(provenance.runId) &&
+        Number.isSafeInteger(provenance.runAttempt) &&
+        provenance.runAttempt > 0 &&
+        provenance.runAttempt <= 2147483647,
+    );
+    return { packet: { action, releaseId, ...provenance }, releaseId };
   }
   demand(
     receipt && Object.keys(receipt).sort().join(',') === 'imageId,registryManifestDigest,registryRepository,repositoryId,runAttempt,runId,sourceSha',
@@ -36,7 +43,7 @@ function request(action, receipt, releaseId) {
   );
   return { packet: { action, receipt }, releaseId: crypto.createHash('sha256').update(canonical(receipt)).digest('hex') };
 }
-function response(raw, action, releaseId) {
+function decode(raw, action, releaseId) {
   demand(Buffer.byteLength(raw) <= 16384 && !raw.includes('\\'));
   const row = JSON.parse(raw);
   const keys = ['action', 'application', 'environment', 'outcome', 'receiptSha256', 'releaseId', 'success'];
@@ -48,10 +55,15 @@ function response(raw, action, releaseId) {
       row.application === 'resx' &&
       row.environment === 'pre' &&
       HEX.test(row.receiptSha256) &&
-      ['UPDATED', 'NO_CHANGE', 'ROLLED_BACK', 'UNKNOWN', 'REJECTED'].includes(row.outcome) &&
+      ['UPDATED', 'NO_CHANGE', 'ROLLED_BACK', 'UNKNOWN', 'REJECTED', 'BUSY'].includes(row.outcome) &&
       typeof row.success === 'boolean',
   );
-  demand(row.success === true && ['UPDATED', 'NO_CHANGE'].includes(row.outcome));
+  demand(row.success === ['UPDATED', 'NO_CHANGE'].includes(row.outcome));
+  return row;
+}
+function response(raw, action, releaseId) {
+  const row = decode(raw, action, releaseId);
+  demand(row.success);
   return row;
 }
 function invoke(command, args, input, timeout = 15000) {
@@ -108,12 +120,39 @@ function sshArguments(key, hosts) {
     USER + '@' + HOST,
   ];
 }
+async function exchange(action, releaseId, send, delay, record) {
+  for (let attempt = 0; attempt <= 20; attempt++) {
+    const received = await send();
+    let row;
+    try {
+      row = decode(received.raw, action, releaseId);
+    } catch {
+      throw Error('RESX_TRANSPORT_UNCONFIRMED_NO_RETRY');
+    }
+    record(row);
+    if (!received.timedOut && row.outcome === 'BUSY' && [0, 75].includes(received.exitCode) && attempt < 20) {
+      await delay(15000);
+      continue;
+    }
+    if (received.timedOut || received.exitCode !== 0 || !row.success) {
+      const failure = Error('RESX_RELEASE_UNCONFIRMED_NO_RETRY');
+      failure.safeResult = row;
+      throw failure;
+    }
+    return row;
+  }
+  throw Error('RESX_BUSY_BOUND_EXCEEDED');
+}
 async function main() {
   demand(process.platform === 'linux' && process.env.GITHUB_REPOSITORY === 'nguijoel/ontoo-resx' && process.env.GITHUB_REF === 'refs/heads/staging');
   const action = process.env.RESX_ACTION || 'deploy';
   if (action === 'rollback') demand(process.env.GITHUB_EVENT_NAME === 'workflow_dispatch' && process.env.GITHUB_ACTOR_ID === '6606980');
   const receipt = action === 'deploy' ? JSON.parse(process.env.RESX_RECEIPT_JSON || 'null') : null;
-  const selected = request(action, receipt, process.env.RESX_RELEASE_ID);
+  const selected = request(action, receipt, process.env.RESX_RELEASE_ID, {
+    sourceSha: process.env.GITHUB_SHA,
+    runId: process.env.GITHUB_RUN_ID,
+    runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT),
+  });
   if (receipt)
     demand(
       receipt.sourceSha === process.env.GITHUB_SHA &&
@@ -148,9 +187,39 @@ async function main() {
     demand(fingerprint === PIN);
     fs.writeFileSync(hosts, lines[0] + '\n', { flag: 'wx', mode: 0o600 });
     const args = sshArguments(key, hosts);
-    const raw = invoke('/usr/bin/ssh', args, JSON.stringify(selected.packet) + '\n', 420000);
-    const result = response(raw, action, selected.releaseId);
+    let result;
+    const attempts = fs.openSync(path.join(process.env.RUNNER_TEMP, 'resx-release-attempts.jsonl'), 'wx', 0o600);
+    try {
+      result = await exchange(
+        action,
+        selected.releaseId,
+        async () => {
+          try {
+            return { raw: invoke('/usr/bin/ssh', args, JSON.stringify(selected.packet) + '\n', 900000), exitCode: 0, timedOut: false };
+          } catch (error) {
+            return { raw: String(error.stdout || ''), exitCode: error.status, timedOut: !!error.signal || error.code === 'ETIMEDOUT' };
+          }
+        },
+        ms => new Promise(resolve => setTimeout(resolve, ms)),
+        row => {
+          fs.writeSync(attempts, JSON.stringify(row) + '\n');
+          fs.fsyncSync(attempts);
+        },
+      );
+    } catch (error) {
+      fs.writeFileSync(
+        path.join(process.env.RUNNER_TEMP, 'resx-release-result.json'),
+        JSON.stringify(error.safeResult || { action, releaseId: selected.releaseId, outcome: 'UNKNOWN', success: false, rootReceiptPresent: false }) +
+          '\n',
+        { flag: 'wx', mode: 0o600 },
+      );
+      throw Error('RESX_RELEASE_UNCONFIRMED_NO_RETRY');
+    } finally {
+      fs.closeSync(attempts);
+    }
+
     fs.writeFileSync(path.join(process.env.RUNNER_TEMP, 'resx-release-result.json'), JSON.stringify(result) + '\n', { flag: 'wx', mode: 0o600 });
+    demand(result.success);
     const health = await fetch('https://resx-preview.ontoo.cloud/health', { redirect: 'error', signal: AbortSignal.timeout(15000) });
     demand(health.status === 200);
     fs.appendFileSync(
@@ -167,4 +236,4 @@ if (require.main === module)
     console.error('RESX_RELEASE_UNCONFIRMED_PRESERVE_STATE_NO_RETRY');
     process.exitCode = 1;
   });
-module.exports = { request, response, canonical, sshArguments, HOST, USER, PIN };
+module.exports = { request, response, decode, canonical, sshArguments, exchange, HOST, USER, PIN };
