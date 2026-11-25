@@ -213,6 +213,8 @@ at30614fa after owner review6065781906 and successful required CI. Authoring and
 risk keys are provisioned. Host activation receipt8c7e90ce binds the enabled
 restricted receiver; GitHub deployment flags remain off, original PRE is healthy
 and unchanged, and no first/repeat/rollback deployment proof has run. Infrastructure
-paused after this task at the owner's request. Live triggers remain held until
-resumption. The local ready-PR adapter correction passes23 focused tests, including
+paused after this task at the owner's request; the owner subsequently resumed
+first-PRE delivery while deferring repeat-deployment and rollback demonstrations.
+Authoring/risk native jobs are enrolled for credential qualification, with
+conservative branch reviews unchanged and PRE deployment still disabled. The local ready-PR adapter correction passes23 focused tests, including
 actual main-to-HTTP PUT forwarding; it still needs normal control-PR integration.
