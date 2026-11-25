@@ -12,6 +12,7 @@ import { config } from './config';
 import { AuthController } from './controllers/auth.controller';
 import { ExportsController } from './controllers/exports.controller';
 import HealthController from './controllers/health.controller';
+import RuntimeInfoController from './controllers/runtime-info.controller';
 import { ImportController } from './controllers/import.controller';
 import IndexController from './controllers/index.controller';
 import LocaleController from './controllers/locale.controller';
@@ -71,6 +72,7 @@ import { PushController } from './controllers/push.controller';
   ],
   controllers: [
     HealthController,
+    RuntimeInfoController,
     AuthController,
     UserController,
     ProjectController,

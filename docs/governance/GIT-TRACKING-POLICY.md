@@ -12,8 +12,9 @@ Status: Remediation pending; this increment does not certify the inherited index
 |---|---|---|
 | G01 | api/src/**, webapp/src/** (excluding generated output) | Maintained application source |
 | G09 | bin/resx-phase1.cjs, bin/resx-phase1-profile.cjs, bin/resx-runtime.cjs, bin/resx-runtime-profile.cjs, bin/resx-dev.cjs | Dedicated isolated runtime tooling |
-| G05 | bin/resx-phase1.test.cjs, bin/resx-runtime.test.cjs, bin/resx-dev.test.cjs | Deterministic profile and TLS test implementation |
+| G05 | bin/resx-phase1.test.cjs, bin/resx-runtime.test.cjs, bin/resx-dev.test.cjs, api/src/controllers/runtime-info.controller.spec.ts | Deterministic profile and TLS test implementation |
 | G06 | docs/resx-phase1-local.md, docs/resx-hosted-runtime.md, docs/resx-local-dev-command.md, docs/governance/GIT-TRACKING-POLICY.md | Maintained application operating contracts and local manifest |
+| G07 | webapp/src/assets/fonts/material-icons/MaterialIcons-Regular.ttf, webapp/src/assets/fonts/material-icons/LICENSE.txt, webapp/src/assets/fonts/material-icons/README.md | Required locally served icon font with Apache-2.0 attribution/provenance |
 | G02 | deploy/resx/Dockerfile, deploy/resx/Dockerfile.dockerignore, deploy/resx/build-inputs.json | Isolated hosted PRE build definition and context boundary |
 | G04 | package.json, webapp/angular.json | Existing frontend build configurations with dedicated preview target |
 

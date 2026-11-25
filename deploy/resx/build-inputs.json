@@ -29,7 +29,10 @@
     "deploy/resx/Dockerfile",
     "deploy/resx/Dockerfile.dockerignore",
     "deploy/resx/build-inputs.json",
-    "webapp/src/assets/.gitkeep"
+    "webapp/src/assets/.gitkeep",
+    "webapp/src/assets/fonts/material-icons/MaterialIcons-Regular.ttf",
+    "webapp/src/assets/fonts/material-icons/LICENSE.txt",
+    "webapp/src/assets/fonts/material-icons/README.md"
   ],
   "exclude": [
     "**/*.spec.ts",

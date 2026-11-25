@@ -1,9 +1,10 @@
 @import 'bootstrap/scss/bootstrap.scss';
+@import './material-icons.scss';
 $resx-preview: false !default;
 @if not $resx-preview {
   @import url('https://fonts.googleapis.com/css?family=Varela+Round:400,700');
   @import url('https://fonts.googleapis.com/css?family=Ubuntu:400,700');
-  @import url('https://fonts.googleapis.com/icon?family=Material+Icons');
+
 }
 
 $theme-colors: (
