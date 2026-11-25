@@ -6,11 +6,15 @@ on:
     inputs:
       action:
         type: choice
-        options: [rollback]
+        options: [deploy, rollback]
         default: rollback
         required: true
       release_id:
         description: Retained release ID for an authorized rollback; never a manifest or command
+        type: string
+        required: false
+      expected_sha:
+        description: Exact staging tip selected by protected merge handoff
         type: string
         required: false
 permissions:
@@ -26,6 +30,15 @@ jobs:
     outputs:
       deploy: ${{ steps.impact.outputs.deploy }}
     steps:
+      - name: Reject moved automatic release handoff
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          ACTION: ${{ inputs.action }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          if [ "$EVENT_NAME" = workflow_dispatch ] && [ "$ACTION" = deploy ]; then
+            [[ "$EXPECTED_SHA" =~ ^[a-f0-9]{40}$ ]] && test "$EXPECTED_SHA" = "$GITHUB_SHA"
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
@@ -39,9 +52,13 @@ jobs:
           const fs=require('node:fs'),c=require('./bin/resx-cicd.cjs');
           const event=JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH,'utf8'));
           let deploy=true;
-          if(event.before&&/^[a-f0-9]{40}$/.test(event.before)&&!/^0+$/.test(event.before)) {
-            const files=c.changedFiles(event.before,process.env.GITHUB_SHA);
-            if(files.length)deploy=!c.classify(files).documentationOnly;
+          let before=event.before;
+          if(event.inputs?.action==='deploy') {
+            before=require('node:child_process').execFileSync('git',['rev-parse','--verify',process.env.GITHUB_SHA+'^1'],{encoding:'utf8'}).trim();
+          }
+          if(before&&/^[a-f0-9]{40}$/.test(before)&&!/^0+$/.test(before)) {
+            const files=c.changedFiles(before,process.env.GITHUB_SHA);
+            deploy=files.length>0&&!c.classify(files).documentationOnly;
           }
           fs.appendFileSync(process.env.GITHUB_OUTPUT,'deploy='+deploy+'\n');
           NODE

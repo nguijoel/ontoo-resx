@@ -159,6 +159,57 @@ async function reconcile({ api, policyApp, validatedRun, createPullRequest }) {
   }
   // Existing promotion: no repeat dispatch, preventing workflow_run recursion.
 }
+// Recover token-suppressed push events. This schedules work; it never authorizes
+// a merge or deployment. A durable bot-authored intent prevents blind redispatch
+// after an uncertain API result. The worker validates the exact SHA again.
+async function recoverMergeHandoff({ api, policyApp, automationActorId, enrolled }) {
+  if (!enrolled) return;
+  assert(Number.isSafeInteger(policyApp) && policyApp > 0 && policyApp !== CI_APP);
+  assert(Number.isSafeInteger(automationActorId) && automationActorId > 0);
+  const repo = await api('');
+  assert(repo.id === REPOSITORY_ID && repo.full_name === REPOSITORY && repo.default_branch === 'dev');
+  for (const branch of ['dev', 'staging']) {
+    requiredChecks(await api('/branches/' + branch + '/protection'), policyApp, branch);
+    const sha = (await api('/git/ref/heads/' + branch)).object.sha;
+    assert(SHA.test(sha));
+    const pulls = await api('/commits/' + sha + '/pulls?per_page=100', null, true);
+    const candidates = pulls.filter(p => p.merge_commit_sha === sha && p.merged_at && p.state === 'closed' && p.base.ref === branch);
+    if (!candidates.length) continue;
+    assert(candidates.length === 1);
+    const pr = await api('/pulls/' + candidates[0].number);
+    assert(pr.merged === true && pr.merge_commit_sha === sha && pr.base.ref === branch && pr.head.repo?.id === REPOSITORY_ID);
+    if (branch === 'staging') assert(pr.head.ref === 'dev');
+    const workflow = branch === 'dev' ? 'resx-ci.yml' : 'resx-release.yml';
+    const runs = await api('/actions/workflows/' + workflow + '/runs?head_sha=' + sha + '&per_page=100', null, 'workflow_runs');
+    // Failed/cancelled runs are evidence too: do not silently retry them.
+    if (runs.some(r => r.head_sha === sha && r.head_branch === branch && ['push', 'workflow_dispatch'].includes(r.event))) continue;
+    const prefix = '<!-- ONTOO_MERGE_HANDOFF_V1\n';
+    const comments = await api('/issues/' + pr.number + '/comments?per_page=100', null, true);
+    let reserved = false;
+    for (const comment of comments) {
+      if (comment.user?.id !== automationActorId || !comment.body?.startsWith(prefix)) continue;
+      let row;
+      try {
+        row = JSON.parse(comment.body.slice(prefix.length, -4));
+      } catch {
+        throw Error('HANDOFF_EVIDENCE_INVALID');
+      }
+      if (row.repositoryId === REPOSITORY_ID && row.branch === branch && row.sourceSha === sha) reserved = true;
+    }
+    if (reserved) continue;
+    const binding = { repositoryId: REPOSITORY_ID, pullRequest: pr.number, branch, sourceSha: sha, workflow, state: 'RESERVED_NO_AUTOMATIC_RETRY' };
+    if ((await api('/git/ref/heads/' + branch)).object.sha !== sha) continue;
+    const intentBody = prefix + JSON.stringify(binding) + '\n-->';
+    const intent = await api('/issues/' + pr.number + '/comments', { body: intentBody });
+    assert(Number.isSafeInteger(intent.id) && intent.user?.id === automationActorId && intent.body === intentBody);
+    // Any error after reservation remains visible and needs reconciliation.
+    if ((await api('/git/ref/heads/' + branch)).object.sha !== sha) throw Error('HANDOFF_REF_MOVED_PRESERVE_INTENT');
+    await api('/actions/workflows/' + workflow + '/dispatches', {
+      ref: branch,
+      inputs: branch === 'dev' ? { expected_sha: sha } : { action: 'deploy', expected_sha: sha },
+    });
+  }
+}
 async function main() {
   const fs = require('node:fs');
   assert(process.env.GITHUB_REPOSITORY === REPOSITORY && process.env.GITHUB_REF === 'refs/heads/dev');
@@ -209,6 +260,12 @@ async function main() {
     throw Error('PAGINATION_INCOMPLETE');
   };
   await reconcile({ api, policyApp, validatedRun: event.workflow_run });
+  await recoverMergeHandoff({
+    api,
+    policyApp,
+    automationActorId: Number(process.env.RESX_AUTOMATION_ACTOR_ID),
+    enrolled: process.env.RESX_PRE_ENROLLED === 'true',
+  });
   console.log('Protected RESX reconciliation completed; no direct branch/deployment write.');
 }
 if (require.main === module)
@@ -216,4 +273,4 @@ if (require.main === module)
     console.error('RESX_RECONCILIATION_REJECTED');
     process.exitCode = 1;
   });
-module.exports = { requiredChecks, successful, policyBinding, reconcile };
+module.exports = { requiredChecks, successful, policyBinding, reconcile, recoverMergeHandoff };

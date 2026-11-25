@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test'),
   assert = require('node:assert/strict');
-const { requiredChecks, successful, policyBinding, reconcile } = require('./resx-reconcile.cjs');
+const { requiredChecks, successful, policyBinding, reconcile, recoverMergeHandoff } = require('./resx-reconcile.cjs');
 const head = 'a'.repeat(40),
   old = 'b'.repeat(40),
   policyApp = 999;
@@ -215,4 +215,103 @@ test('no qualified PR creator means no promotion PR or dispatch is created', asy
   const f = fixture();
   await assert.rejects(reconcile({ ...f, createPullRequest: undefined, policyApp, validatedRun: run }));
   assert.equal(f.calls.filter(x => x.body).length, 0);
+});
+
+function handoffFixture() {
+  const comments = [],
+    calls = [];
+  const pr = {
+    number: 9,
+    merged: true,
+    merged_at: '2026-11-25T10:00:00Z',
+    state: 'closed',
+    merge_commit_sha: head,
+    base: { ref: 'dev' },
+    head: { ref: 'codex/change', repo: { id: 795522855 } },
+  };
+  return {
+    comments,
+    calls,
+    api: async (path, body) => {
+      calls.push({ path, body });
+      if (path === '') return { id: 795522855, full_name: 'nguijoel/ontoo-resx', default_branch: 'dev' };
+      if (path.includes('/protection')) return protection(path.includes('/dev/') ? 'dev' : 'staging');
+      if (path === '/git/ref/heads/dev') return { object: { sha: head } };
+      if (path === '/git/ref/heads/staging') return { object: { sha: old } };
+      if (path === '/commits/' + head + '/pulls?per_page=100') return [pr];
+      if (path === '/commits/' + old + '/pulls?per_page=100') return [];
+      if (path === '/pulls/9') return pr;
+      if (path.includes('/runs?')) return [];
+      if (path === '/issues/9/comments?per_page=100') return comments;
+      if (path === '/issues/9/comments') {
+        const row = { id: 42, user: { id: 123 }, body: body.body };
+        comments.push(row);
+        return row;
+      }
+      if (path.endsWith('/dispatches')) return null;
+      throw Error('Unexpected handoff request');
+    },
+  };
+}
+test('token-suppressed merge handoff reserves once then dispatches exact integration SHA', async () => {
+  const f = handoffFixture();
+  for (let i = 0; i < 2; i++) await recoverMergeHandoff({ ...f, policyApp, automationActorId: 123, enrolled: true });
+  const dispatches = f.calls.filter(x => x.path.endsWith('/dispatches'));
+  assert.equal(dispatches.length, 1);
+  assert.deepEqual(dispatches[0].body, { ref: 'dev', inputs: { expected_sha: head } });
+  assert.equal(f.comments.length, 1);
+});
+test('uncertain dispatch preserves reservation and never retries automatically', async () => {
+  const f = handoffFixture(),
+    original = f.api;
+  f.api = async (path, ...args) => {
+    if (path.endsWith('/dispatches')) throw Error('Synthetic API uncertainty');
+    return original(path, ...args);
+  };
+  await assert.rejects(recoverMergeHandoff({ ...f, policyApp, automationActorId: 123, enrolled: true }));
+  f.api = original;
+  await recoverMergeHandoff({ ...f, policyApp, automationActorId: 123, enrolled: true });
+  assert.equal(f.calls.filter(x => x.path.endsWith('/dispatches')).length, 0);
+  assert.equal(f.comments.length, 1);
+});
+test('disabled handoff and moved tip cannot issue a dispatch', async () => {
+  const f = handoffFixture();
+  await recoverMergeHandoff({ ...f, policyApp, enrolled: false });
+  assert.equal(f.calls.length, 0);
+  const original = f.api;
+  let refs = 0;
+  f.api = async (path, ...args) => (path === '/git/ref/heads/dev' && ++refs > 1 ? { object: { sha: old } } : original(path, ...args));
+  await recoverMergeHandoff({ ...f, policyApp, automationActorId: 123, enrolled: true });
+  assert.equal(f.calls.filter(x => x.path.endsWith('/dispatches')).length, 0);
+  assert.equal(f.comments.length, 0);
+});
+test('existing failed workflow evidence blocks redispatch; staging cannot accept a feature PR', async () => {
+  const f = handoffFixture(),
+    original = f.api;
+  f.api = async (path, ...args) =>
+    path.includes('/runs?') ? [{ head_sha: head, head_branch: 'dev', event: 'workflow_dispatch', conclusion: 'failure' }] : original(path, ...args);
+  await recoverMergeHandoff({ ...f, policyApp, automationActorId: 123, enrolled: true });
+  assert.equal(f.comments.length, 0);
+  assert.equal(f.calls.filter(x => x.path.endsWith('/dispatches')).length, 0);
+  const g = handoffFixture(),
+    gapi = g.api;
+  const foreign = {
+    number: 10,
+    merged: true,
+    merged_at: '2026-11-25T10:00:00Z',
+    state: 'closed',
+    merge_commit_sha: old,
+    base: { ref: 'staging' },
+    head: { ref: 'codex/unapproved-route', repo: { id: 795522855 } },
+  };
+  g.api = async (path, ...args) =>
+    path === '/commits/' + head + '/pulls?per_page=100'
+      ? []
+      : path === '/commits/' + old + '/pulls?per_page=100'
+        ? [foreign]
+        : path === '/pulls/10'
+          ? foreign
+          : gapi(path, ...args);
+  await assert.rejects(recoverMergeHandoff({ ...g, policyApp, automationActorId: 123, enrolled: true }));
+  assert.equal(g.calls.filter(x => x.body).length, 0);
 });

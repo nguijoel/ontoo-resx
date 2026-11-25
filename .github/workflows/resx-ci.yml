@@ -6,6 +6,11 @@ on:
   push:
     branches: [dev, staging]
   workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Exact integration tip selected by protected merge handoff
+        type: string
+        required: false
 permissions:
   contents: read
 concurrency:
@@ -19,6 +24,13 @@ jobs:
     outputs:
       documentation: ${{ steps.scope.outputs.documentation }}
     steps:
+      - name: Reject moved integration handoff
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          if [ -n "$EXPECTED_SHA" ]; then
+            [[ "$EXPECTED_SHA" =~ ^[a-f0-9]{40}$ ]] && test "$EXPECTED_SHA" = "$GITHUB_SHA"
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}

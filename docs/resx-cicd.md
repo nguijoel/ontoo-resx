@@ -4,8 +4,9 @@ The CI/promotion/admission/rollback standard applies across ONTOO repositories.
 This first enrollment is nguijoel/ontoo-resx, repository795522855, dev -> staging -> PRE.
 Common controls are profile-driven; enrolling another repository is explicit,
 not permission to reuse RESX identities, runtime targets or credentials.
-Main/PROD excluded. Existing PR6 is the application candidate; no separate
-product/demo change. CI/CD-POC-001 remains the acceptance contract.
+Main/PROD excluded. PR6 is closed unmerged; preserve its real application change
+for a fresh PR once the permanent process is ready. No separate product/demo
+change. CI/CD-001 supersedes the POC framing; the end-to-end acceptance cases remain.
 
 ## Implemented source, not live enforcement
 
@@ -18,7 +19,7 @@ product/demo change. CI/CD-POC-001 remains the acceptance contract.
   creator is mandatory; ordinary GITHUB_TOKEN PR creation/dispatch is not used
   as a substitute for merge-eligible PR validation.
 - resx-release.yml: staging-only allowlisted Git export, pinned image build,
-  no-network native-module smoke, image archive plus separate receipt, constrained
+  no-network native-module smoke, GHCR image plus separate receipt, constrained
   OIDC request. Missing enrollment fails; HTTP202 is ACCEPTED, not deployed.
 
 The resx-cicd adapter is NOT independent policy authority. Use a protected
@@ -30,7 +31,8 @@ trusted policy. A PR-authored same-name workflow is not a substitute.
 App proposal: Checks write; Contents/PR/Actions/Metadata read; selected repository
 only. No Admin/packages/ref/merge write. Owner approved the exact selected-repo App, isolated evaluator and fixed
 OIDC/local-controller security scope on25November; registration, reviewed code
-and actual enrollment readback remain pending. No broader access is implied.
+and actual service activation remain separate. App registration/selected-repository
+installation are complete as recorded below. No broader access is implied.
 Branch protection must bind strict RESX CI to Actions App15368 and the applicable
 policy context to the actual independent AppID; require PR/conversation resolution,
 enforce admins and reject force/delete. No placeholder ID or caller rule boolean.
@@ -173,3 +175,17 @@ This replaces the earlier archive-distribution proposal. It has not been publish
 run, or enrolled at the receiver; protected digest-pull/collector compatibility and
 actual package access must be qualified before enabling releases. The historical
 archive-parser work remains evidence only and is not the default release path.
+
+The local merge-handoff implementation addresses workflow-token-suppressed push
+events: after current-tip merged-PR and required-protection checks, it detects
+existing integration/release runs or writes a bot-authored PR-comment reservation
+before dispatch. A reserved operation is not blindly retried after an uncertain
+response. Both consumers reject a moved `expected_sha`; staging dispatch still
+requires independently enrolled actor/control/promotion admission at the receiver.
+Dispatch CI never counts as PR-required validation. Exact GitHub Actions bot
+identity was read from the public API as `github-actions[bot]`, ID `41898282`;
+the protected automation-ID variable and receiver dispatch actor must be enrolled
+explicitly. No variable/enrollment/host operation was performed by this source
+change. Native merge handoff/recovery remains unqualified; unresolved reservations
+need evidence-based reconciliation. A failed/cancelled prior run is preserved,
+not silently rerun. Qualified PR creation is still a separate required adapter.

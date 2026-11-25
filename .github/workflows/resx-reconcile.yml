@@ -37,5 +37,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RESX_POLICY_APP_ID: ${{ vars.RESX_POLICY_APP_ID }}
+          RESX_AUTOMATION_ACTOR_ID: ${{ vars.RESX_AUTOMATION_ACTOR_ID }}
+          RESX_PRE_ENROLLED: ${{ vars.RESX_PRE_ENROLLED }}
         run: node bin/resx-reconcile.cjs
 # No candidate checkout, package install, arbitrary script or deployment credential.
