@@ -6,79 +6,16 @@ const SHA = /^[a-f0-9]{40}$/;
 function assert(v) {
   if (!v) throw Error('RESX_RECONCILIATION_REJECTED');
 }
-function requiredChecks(protection, policyApp, branch) {
-  assert(
-    protection.enforce_admins?.enabled === true &&
-      protection.required_pull_request_reviews &&
-      protection.allow_force_pushes?.enabled === false &&
-      protection.allow_deletions?.enabled === false &&
-      protection.required_conversation_resolution?.enabled === true,
-  );
-  assert(protection.required_status_checks?.strict === true);
-  const checks = protection.required_status_checks.checks || [];
-  assert(checks.some(x => x.context === 'RESX CI' && x.app_id === CI_APP));
-  assert(checks.some(x => x.context === 'ONTOO policy eligibility ' + branch && x.app_id === policyApp));
+function successful(checks, sha) {
+  const latest = checks.filter(c => c.name === 'RESX CI' && c.app?.id === CI_APP && c.head_sha === sha).sort((a, b) => b.id - a.id)[0];
+  return latest?.status === 'completed' && latest.conclusion === 'success';
 }
-function successful(checks, sha, policyApp, branch) {
-  return [
-    ['RESX CI', CI_APP],
-    ['ONTOO policy eligibility ' + branch, policyApp],
-  ].every(([name, id]) => {
-    const latest = checks.filter(c => c.name === name && c.app?.id === id && c.head_sha === sha).sort((a, b) => b.id - a.id)[0];
-    return latest?.status === 'completed' && latest.conclusion === 'success';
-  });
-}
-function policyBinding(checks, pr, policyApp, openPulls, now = Date.now()) {
-  const found = checks
-    .filter(c => c.name === 'ONTOO policy eligibility ' + pr.base.ref && c.app?.id === policyApp && c.head_sha === pr.head.sha)
-    .sort((a, b) => b.id - a.id)[0];
-  assert(
-    found?.status === 'completed' && found.conclusion === 'success' && typeof found.output?.text === 'string' && found.output.text.length <= 65536,
-  );
-  let record;
-  try {
-    record = JSON.parse(found.output.text);
-  } catch {
-    throw Error('RESX_POLICY_BINDING_REJECTED');
-  }
-  assert(
-    record.version === 1 &&
-      record.repositoryId === REPOSITORY_ID &&
-      record.headSha === pr.head.sha &&
-      record.destination === pr.base.ref &&
-      Number.isSafeInteger(record.expiresAtMs) &&
-      record.expiresAtMs > now &&
-      record.expiresAtMs <= now + 300000 &&
-      Array.isArray(record.pullRequests),
-  );
-  const relevant = openPulls
-    .filter(p => p.base.ref === pr.base.ref && p.head.sha === pr.head.sha)
-    .map(p => ({ number: p.number, baseSha: p.base.sha, headRef: p.head.ref }))
-    .sort((a, b) => a.number - b.number);
-  const bound = [...record.pullRequests].sort((a, b) => a.number - b.number);
-  assert(
-    bound.every(
-      p =>
-        p &&
-        Object.keys(p).length === 3 &&
-        ['number', 'baseSha', 'headRef'].every(k => Object.hasOwn(p, k)) &&
-        Number.isSafeInteger(p.number) &&
-        p.number > 0 &&
-        SHA.test(p.baseSha || '') &&
-        typeof p.headRef === 'string',
-    ),
-  );
-  const tuples = rows => rows.map(p => [p.number, p.baseSha, p.headRef]);
-  assert(
-    JSON.stringify(tuples(relevant)) === JSON.stringify(tuples(bound)) && relevant.some(p => p.number === pr.number && p.baseSha === pr.base.sha),
-  );
-  return record;
-}
-async function reconcile({ api, policyApp, validatedRun, createPullRequest }) {
-  assert(Number.isSafeInteger(policyApp) && policyApp > 0 && policyApp !== CI_APP);
+async function reconcile({ api, validatedRun, createPullRequest }) {
   const repo = await api('');
   assert(repo.id === REPOSITORY_ID && repo.full_name === REPOSITORY && repo.default_branch === 'dev' && repo.allow_auto_merge === true);
-  for (const branch of ['dev', 'staging']) requiredChecks(await api('/branches/' + branch + '/protection'), policyApp, branch);
+  // Native merge enforcement is authoritative. Full rule settings are verified
+  // by the configuration operator before enrollment, not via an Admin-scoped token.
+  for (const branch of ['dev', 'staging']) assert((await api('/branches/' + branch)).protected === true);
   const dev = await api('/git/ref/heads/dev'),
     stage = await api('/git/ref/heads/staging');
   assert(SHA.test(dev.object.sha) && SHA.test(stage.object.sha));
@@ -88,18 +25,11 @@ async function reconcile({ api, policyApp, validatedRun, createPullRequest }) {
     if (pr.draft || !['dev', 'staging'].includes(pr.base.ref) || pr.head.repo?.id !== REPOSITORY_ID) continue;
     if (pr.base.ref === 'staging' && (pr.head.ref !== 'dev' || pr.head.sha !== dev.object.sha)) continue;
     const checks = await api('/commits/' + pr.head.sha + '/check-runs?per_page=100', null, 'check_runs');
-    if (!successful(checks, pr.head.sha, policyApp, pr.base.ref)) continue;
+    if (!successful(checks, pr.head.sha)) continue;
     const fresh = await api('/pulls/' + pr.number);
     if (fresh.head.sha !== pr.head.sha || fresh.draft || fresh.state !== 'open') continue;
     const currentBase = await api('/git/ref/heads/' + fresh.base.ref);
     if (currentBase.object.sha !== fresh.base.sha) continue;
-    const currentPulls = await api('/pulls?state=open&per_page=100', null, true);
-    try {
-      policyBinding(checks, fresh, policyApp, currentPulls);
-    } catch {
-      if (fresh.auto_merge) await api('/graphql-disable-auto-merge', { nodeId: fresh.node_id });
-      continue;
-    }
     // Do not arm a deferred merge while native conversations/checks are unresolved.
     if (fresh.mergeable !== true || fresh.mergeable_state !== 'clean') continue;
     // Native merge checks/reviews remain authoritative and are never bypassed.
@@ -131,7 +61,7 @@ async function reconcile({ api, policyApp, validatedRun, createPullRequest }) {
         expectedHeadSha: stage.object.sha,
         expectedBaseSha: dev.object.sha,
         draft: false,
-        body: 'Ancestry only: exact current dev/staging full Git trees match. Independent eligibility must verify current refs and prior promotion; no application/config/schema content change.',
+        body: 'Ancestry only: exact current dev/staging full Git trees match. Native required checks and code-owner reviews remain authoritative; no application/config/schema content change.',
       });
       // A qualified App-authored PR triggers normal pull_request CI, not dispatch checks.
     }
@@ -152,13 +82,13 @@ async function reconcile({ api, policyApp, validatedRun, createPullRequest }) {
       expectedBaseSha: stage.object.sha,
       draft: false,
       body:
-        'CI/CD-POC-001 protected promotion. Source ' +
+        'GOV-CICD-001 protected promotion. Source ' +
         dev.object.sha +
         '; validated run ' +
         validatedRun.id +
-        '. Independent policy eligibility and native branch checks remain required. No direct push or PROD operation.',
+        '. Native required checks and code-owner reviews remain required. No direct push or PROD operation.',
     });
-    // PR creation must use the qualified App broker. Dispatch checks cannot
+    // PR creation must use the repository-scoped App installation token. Dispatch checks cannot
     // satisfy native required PR checks and are not a substitute.
   }
   // Existing promotion: no repeat dispatch, preventing workflow_run recursion.
@@ -168,14 +98,13 @@ async function reconcile({ api, policyApp, validatedRun, createPullRequest }) {
 // after an uncertain dispatch result. Comment-creation ambiguity can cause a
 // metadata retry; only the locked controller enforces deployment idempotency.
 // The worker validates the exact SHA again.
-async function recoverMergeHandoff({ api, policyApp, automationActorId, enrolled }) {
+async function recoverMergeHandoff({ api, automationActorId, enrolled }) {
   if (!enrolled) return;
-  assert(Number.isSafeInteger(policyApp) && policyApp > 0 && policyApp !== CI_APP);
   assert(Number.isSafeInteger(automationActorId) && automationActorId > 0);
   const repo = await api('');
   assert(repo.id === REPOSITORY_ID && repo.full_name === REPOSITORY && repo.default_branch === 'dev');
   for (const branch of ['dev', 'staging']) {
-    requiredChecks(await api('/branches/' + branch + '/protection'), policyApp, branch);
+    assert((await api('/branches/' + branch)).protected === true);
     const sha = (await api('/git/ref/heads/' + branch)).object.sha;
     assert(SHA.test(sha));
     const pulls = await api('/commits/' + sha + '/pulls?per_page=100', null, true);
@@ -216,88 +145,62 @@ async function recoverMergeHandoff({ api, policyApp, automationActorId, enrolled
     });
   }
 }
-function brokerCreator({ api, fetchImpl = fetch, requestUrl, requestToken, recordIntent = row => console.log(JSON.stringify(row)) }) {
-  async function boundedJson(response, maximum) {
-    assert(response.body);
-    const chunks = [];
-    let bytes = 0;
-    for await (const chunk of response.body) {
-      bytes += chunk.length;
-      assert(bytes <= maximum);
-      chunks.push(Buffer.from(chunk));
-    }
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
-  }
-  // Fixed trusted endpoint. Candidate workflows never receive the App key/token.
+function nativeCreator({ api, authoringApi }) {
   return async pr => {
     assert(pr?.draft === false && typeof pr.title === 'string' && pr.title.length > 0 && pr.title.length <= 200);
     assert(typeof pr.body === 'string' && Buffer.byteLength(pr.body) <= 16000);
     assert((pr.head === 'dev' && pr.base === 'staging') || (pr.head === 'staging' && pr.base === 'dev'));
-    const headSha = pr.expectedHeadSha,
-      baseSha = pr.expectedBaseSha;
-    assert(SHA.test(headSha || '') && SHA.test(baseSha || ''));
-    assert((await api('/git/ref/heads/' + pr.head)).object.sha === headSha);
-    assert((await api('/git/ref/heads/' + pr.base)).object.sha === baseSha);
-    const intent = {
-      operation: 'create',
-      repositoryId: REPOSITORY_ID,
-      head: pr.head,
-      base: pr.base,
-      expectedHeadSha: headSha,
-      expectedBaseSha: baseSha,
-    };
-    // Exclude presentation/run IDs so a timeout cannot be retried under a new ID.
-    const requestId = require('node:crypto').createHash('sha256').update(JSON.stringify(intent)).digest('hex');
-    const packet = { ...intent, requestId, title: pr.title, body: pr.body };
-    const body = JSON.stringify(packet);
-    assert(Buffer.byteLength(body) <= 32768 && typeof requestToken === 'string' && requestToken.length > 0);
-    const url = new URL(requestUrl);
+    assert(SHA.test(pr.expectedHeadSha || '') && SHA.test(pr.expectedBaseSha || ''));
+    assert((await api('/git/ref/heads/' + pr.head)).object.sha === pr.expectedHeadSha);
+    assert((await api('/git/ref/heads/' + pr.base)).object.sha === pr.expectedBaseSha);
+    // Recover an existing request by its native PR identity, never blindly repeat POST.
+    const existing = await api('/pulls?state=open&head=nguijoel:' + pr.head + '&base=' + pr.base + '&per_page=100', null, true);
+    assert(existing.length <= 1);
+    const result =
+      existing[0] ||
+      (await authoringApi('/pulls', {
+        head: pr.head,
+        base: pr.base,
+        title: pr.title,
+        body: pr.body,
+        draft: false,
+      }));
     assert(
-      url.protocol === 'https:' &&
-        !url.username &&
-        !url.password &&
-        (!url.port || url.port === '443') &&
-        url.hostname.endsWith('.actions.githubusercontent.com'),
+      Number.isSafeInteger(result.number) &&
+        result.number > 0 &&
+        result.head?.repo?.id === REPOSITORY_ID &&
+        result.head.sha === pr.expectedHeadSha &&
+        result.base?.sha === pr.expectedBaseSha &&
+        result.head.ref === pr.head &&
+        result.base.ref === pr.base &&
+        result.state === 'open' &&
+        result.draft === false,
     );
-    url.searchParams.set('audience', 'ontoo-resx-authoring');
-    const tokenResponse = await fetchImpl(url, {
-      headers: { Authorization: 'Bearer ' + requestToken },
-      redirect: 'error',
-      signal: AbortSignal.timeout(15000),
-    });
-    assert(tokenResponse.status === 200);
-    const tokenData = await boundedJson(tokenResponse, 32768);
-    assert(typeof tokenData.value === 'string' && tokenData.value.length > 0 && tokenData.value.length <= 16384);
-    recordIntent({ event: 'ONTOO_AUTHORING_REQUEST', requestId, repositoryId: REPOSITORY_ID, headSha, baseSha });
-    // Do not log responses: even error bodies are not operational evidence here.
-    const response = await fetchImpl('https://resx-preview.ontoo.cloud/.well-known/ontoo-release/resx-authoring', {
-      method: 'POST',
-      headers: { Authorization: 'Bearer ' + tokenData.value, 'Content-Type': 'application/json' },
-      body,
-      redirect: 'error',
-      signal: AbortSignal.timeout(120000),
-    });
-    if (response.status !== 200) throw Error('AUTHORING_UNCONFIRMED_PRESERVE_REQUEST_ID');
-    const result = await boundedJson(response, 8192);
-    assert(result && Object.keys(result).sort().join(',') === 'automaticRetry,baseSha,headSha,number,outcome,requestId');
-    assert(['created', 'existing'].includes(result.outcome) && result.requestId === requestId && result.automaticRetry === false);
-    assert(Number.isSafeInteger(result.number) && result.number > 0 && result.headSha === headSha && result.baseSha === baseSha);
+    console.log(
+      JSON.stringify({
+        event: 'ONTOO_APP_PR',
+        repositoryId: REPOSITORY_ID,
+        number: result.number,
+        headSha: pr.expectedHeadSha,
+        baseSha: pr.expectedBaseSha,
+      }),
+    );
     return result;
   };
 }
 async function main() {
   const fs = require('node:fs');
   assert(process.env.GITHUB_REPOSITORY === REPOSITORY && process.env.GITHUB_REF === 'refs/heads/dev');
-  const policyApp = Number(process.env.RESX_POLICY_APP_ID),
-    token = process.env.GH_TOKEN;
+  const token = process.env.GH_TOKEN,
+    authoringToken = process.env.GH_APP_TOKEN;
   assert(token);
   const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
   if (event.workflow_run && event.workflow_run.conclusion !== 'success') return;
-  const api = async (path, body, pagination) => {
+  const request = async (authToken, path, body, pagination) => {
     if (path === '/graphql-enable-auto-merge' || path === '/graphql-disable-auto-merge') {
       const r = await fetch('https://api.github.com/graphql', {
         method: 'POST',
-        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+        headers: { Authorization: 'Bearer ' + authToken, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           query:
             path === '/graphql-enable-auto-merge'
@@ -318,7 +221,7 @@ async function main() {
       const suffix = pagination ? (path.includes('?') ? '&' : '?') + 'page=' + page : '';
       const r = await fetch('https://api.github.com/repos/' + REPOSITORY + path + suffix, {
         method: body ? 'POST' : 'GET',
-        headers: { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' },
+        headers: { Authorization: 'Bearer ' + authToken, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' },
         body: body ? JSON.stringify(body) : undefined,
         redirect: 'error',
         signal: AbortSignal.timeout(20000),
@@ -334,14 +237,11 @@ async function main() {
     }
     throw Error('PAGINATION_INCOMPLETE');
   };
-  const createPullRequest =
-    process.env.RESX_AUTHORING_ENROLLED === 'true'
-      ? brokerCreator({ api, requestUrl: process.env.ACTIONS_ID_TOKEN_REQUEST_URL, requestToken: process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN })
-      : undefined;
-  await reconcile({ api, policyApp, validatedRun: event.workflow_run, createPullRequest });
+  const api = (path, body, pagination) => request(token, path, body, pagination);
+  const createPullRequest = authoringToken ? nativeCreator({ api, authoringApi: (path, body) => request(authoringToken, path, body) }) : undefined;
+  await reconcile({ api, validatedRun: event.workflow_run, createPullRequest });
   await recoverMergeHandoff({
     api,
-    policyApp,
     automationActorId: Number(process.env.RESX_AUTOMATION_ACTOR_ID),
     enrolled: process.env.RESX_PRE_ENROLLED === 'true',
   });
@@ -352,4 +252,4 @@ if (require.main === module)
     console.error('RESX_RECONCILIATION_REJECTED');
     process.exitCode = 1;
   });
-module.exports = { requiredChecks, successful, policyBinding, reconcile, recoverMergeHandoff, brokerCreator };
+module.exports = { successful, reconcile, recoverMergeHandoff, nativeCreator };

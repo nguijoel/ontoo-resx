@@ -1,0 +1,17 @@
+# Native review baseline. Base-branch rules must require code-owner review,
+# dismiss stale reviews, enforce admins and protect this file before activation.
+# Unknown paths and all runtime/control/configuration changes require human review.
+* @nguijoel
+
+# Ordinary top-level product prose can use checks-only auto-merge.
+/README.md
+/CHANGELOG.md
+
+# Explicitly document security-critical ownership (also covered by the default).
+/.github/ @nguijoel
+/bin/ @nguijoel
+/deploy/ @nguijoel
+/docs/governance/ @nguijoel
+/docs/resx-cicd.md @nguijoel
+/package.json @nguijoel
+/yarn.lock @nguijoel

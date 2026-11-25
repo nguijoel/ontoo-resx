@@ -1,44 +1,20 @@
 'use strict';
 const test = require('node:test'),
   assert = require('node:assert/strict');
-const { requiredChecks, successful, policyBinding, reconcile, recoverMergeHandoff, brokerCreator } = require('./resx-reconcile.cjs');
+const { successful, reconcile, recoverMergeHandoff, nativeCreator } = require('./resx-reconcile.cjs');
 const head = 'a'.repeat(40),
   old = 'b'.repeat(40),
   policyApp = 999;
-function protection(branch) {
-  return {
-    enforce_admins: { enabled: true },
-    required_pull_request_reviews: {},
-    allow_force_pushes: { enabled: false },
-    allow_deletions: { enabled: false },
-    required_conversation_resolution: { enabled: true },
-    required_status_checks: {
-      strict: true,
-      checks: [
-        { context: 'RESX CI', app_id: 15368 },
-        { context: 'ONTOO policy eligibility ' + branch, app_id: policyApp },
-      ],
-    },
-  };
-}
 function checks(branch) {
   return [
     { id: 1, name: 'RESX CI', head_sha: head, status: 'completed', conclusion: 'success', app: { id: 15368 } },
     { id: 2, name: 'ONTOO policy eligibility ' + branch, head_sha: head, status: 'completed', conclusion: 'success', app: { id: policyApp } },
   ];
 }
-test('native protection must bind independent publisher and correct destination', () => {
-  requiredChecks(protection('dev'), policyApp, 'dev');
-  assert.throws(() => requiredChecks(protection('dev'), policyApp, 'staging'));
-  const p = protection('dev');
-  p.required_status_checks.checks[1].app_id = 15368;
-  assert.throws(() => requiredChecks(p, policyApp, 'dev'));
-});
-test('latest failure or pending check defeats stale success; destination cannot reuse approval', () => {
-  assert.ok(successful(checks('dev'), head, policyApp, 'dev'));
-  assert.equal(successful(checks('dev'), head, policyApp, 'staging'), false);
+test('latest CI failure or pending state defeats stale success', () => {
+  assert.ok(successful(checks('dev'), head));
   for (const change of [{ conclusion: 'failure' }, { status: 'in_progress', conclusion: null }])
-    assert.equal(successful([...checks('dev'), { ...checks('dev')[1], id: 3, ...change }], head, policyApp, 'dev'), false);
+    assert.equal(successful([...checks('dev'), { ...checks('dev')[0], id: 3, ...change }], head), false);
 });
 function fixture(prs = []) {
   const calls = [];
@@ -48,7 +24,7 @@ function fixture(prs = []) {
       calls.push({ path, body });
       if (body) return {};
       if (path === '') return { id: 795522855, full_name: 'nguijoel/ontoo-resx', default_branch: 'dev', allow_auto_merge: true };
-      if (path.includes('/protection')) return protection(path.includes('/dev/') ? 'dev' : 'staging');
+      if (['/branches/dev', '/branches/staging'].includes(path)) return { protected: true };
       if (path === '/git/ref/heads/dev') return { object: { sha: head } };
       if (path === '/git/ref/heads/staging') return { object: { sha: old } };
       if (path.startsWith('/pulls?')) return prs;
@@ -73,13 +49,12 @@ test('existing draft promotion never merges or recursively redispatches', async 
   await reconcile({ ...f, policyApp, validatedRun: run });
   assert.equal(f.calls.filter(x => x.body).length, 0);
 });
-test('unvalidated, stale and missing publisher inputs never promote', async () => {
+test('unvalidated or stale runs never promote', async () => {
   for (const validatedRun of [null, { ...run, head_sha: old }, { ...run, conclusion: 'failure' }]) {
     const f = fixture();
     await reconcile({ ...f, policyApp, validatedRun });
     assert.equal(f.calls.filter(x => x.body).length, 0);
   }
-  await assert.rejects(reconcile({ ...fixture(), policyApp: 15368, validatedRun: run }));
 });
 
 test('native staging merge receives a no-content ancestry sync, not an endless promotion', async () => {
@@ -96,26 +71,7 @@ test('native staging merge receives a no-content ancestry sync, not an endless p
   assert.equal(create.body.base, 'dev');
 });
 
-test('merge decision rebinds exact PR/base/head/open-PR set and expires; old success cannot authorize moving base', () => {
-  const pr = { number: 7, base: { ref: 'dev', sha: old }, head: { sha: head, ref: 'codex/change' } };
-  const rows = checks('dev');
-  rows[1].output = {
-    text: JSON.stringify({
-      version: 1,
-      repositoryId: 795522855,
-      headSha: head,
-      destination: 'dev',
-      expiresAtMs: 2000,
-      pullRequests: [{ number: 7, baseSha: old, headRef: 'codex/change' }],
-    }),
-  };
-  assert.ok(policyBinding(rows, pr, policyApp, [pr], 1000));
-  assert.throws(() => policyBinding(rows, { ...pr, base: { ref: 'dev', sha: head } }, policyApp, [pr], 1000));
-  assert.throws(() => policyBinding(rows, pr, policyApp, [pr, { ...pr, number: 8 }], 1000));
-  assert.throws(() => policyBinding(rows, pr, policyApp, [pr], 3000));
-});
-
-test('only the exact unexpired bound decision enables native auto-merge; already enabled is idempotent', async () => {
+test('native clean PR enables auto-merge; already enabled is idempotent', async () => {
   for (const alreadyEnabled of [false, true]) {
     const pr = {
       number: 7,
@@ -154,63 +110,6 @@ test('only the exact unexpired bound decision enables native auto-merge; already
   }
 });
 
-test('canonical JSON member ordering is accepted without ignoring extra binding fields', () => {
-  const pr = { number: 7, base: { ref: 'dev', sha: old }, head: { sha: head, ref: 'codex/change' } };
-  const rows = checks('dev');
-  const record = {
-    version: 1,
-    repositoryId: 795522855,
-    headSha: head,
-    destination: 'dev',
-    expiresAtMs: 2000,
-    pullRequests: [{ baseSha: old, headRef: 'codex/change', number: 7 }],
-  };
-  rows[1].output = { text: JSON.stringify(record) };
-  assert.ok(policyBinding(rows, pr, policyApp, [pr], 1000));
-  record.pullRequests[0].unapproved = true;
-  rows[1].output.text = JSON.stringify(record);
-  assert.throws(() => policyBinding(rows, pr, policyApp, [pr], 1000));
-});
-
-test('new relevant PR discovered on final inventory prevents enable and revokes an already armed merge', async () => {
-  const pr = {
-    number: 7,
-    draft: false,
-    state: 'open',
-    mergeable: true,
-    mergeable_state: 'clean',
-    node_id: 'synthetic-node',
-    auto_merge: { enabled_by: { login: 'github-actions' } },
-    base: { ref: 'dev', sha: old },
-    head: { sha: head, ref: 'codex/change', repo: { id: 795522855 } },
-  };
-  const f = fixture([pr]),
-    original = f.api;
-  let inventories = 0;
-  f.api = async (path, body, ...rest) => {
-    if (path.startsWith('/pulls?')) return ++inventories === 1 ? [pr] : [pr, { ...pr, number: 8 }];
-    if (path === '/git/ref/heads/dev') return { object: { sha: old } };
-    if (path.startsWith('/commits/')) {
-      const rows = checks('dev');
-      rows[1].output = {
-        text: JSON.stringify({
-          version: 1,
-          repositoryId: 795522855,
-          headSha: head,
-          destination: 'dev',
-          expiresAtMs: Date.now() + 30000,
-          pullRequests: [{ number: 7, baseSha: old, headRef: 'codex/change' }],
-        }),
-      };
-      return rows;
-    }
-    if (path === '/pulls/7') return pr;
-    return original(path, body, ...rest);
-  };
-  await reconcile({ ...f, policyApp, validatedRun: null });
-  assert.equal(f.calls.filter(x => x.path === '/graphql-enable-auto-merge').length, 0);
-  assert.equal(f.calls.filter(x => x.path === '/graphql-disable-auto-merge').length, 1);
-});
 test('no qualified PR creator means no promotion PR or dispatch is created', async () => {
   const f = fixture();
   await assert.rejects(reconcile({ ...f, createPullRequest: undefined, policyApp, validatedRun: run }));
@@ -235,7 +134,7 @@ function handoffFixture() {
     api: async (path, body) => {
       calls.push({ path, body });
       if (path === '') return { id: 795522855, full_name: 'nguijoel/ontoo-resx', default_branch: 'dev' };
-      if (path.includes('/protection')) return protection(path.includes('/dev/') ? 'dev' : 'staging');
+      if (['/branches/dev', '/branches/staging'].includes(path)) return { protected: true };
       if (path === '/git/ref/heads/dev') return { object: { sha: head } };
       if (path === '/git/ref/heads/staging') return { object: { sha: old } };
       if (path === '/commits/' + head + '/pulls?per_page=100') return [pr];
@@ -315,102 +214,100 @@ test('existing failed workflow evidence blocks redispatch; staging cannot accept
   await assert.rejects(recoverMergeHandoff({ ...g, policyApp, automationActorId: 123, enrolled: true }));
   assert.equal(g.calls.filter(x => x.body).length, 0);
 });
-function brokerFixture() {
-  const requests = [];
-  const options = {
-    api: async path => ({ object: { sha: path.endsWith('/dev') ? head : old } }),
-    requestUrl: 'https://token.actions.githubusercontent.com/fixed-request',
-    requestToken: 'synthetic-runner-token',
-    recordIntent: () => {},
-    fetchImpl: async (url, init) => {
-      requests.push({ url: String(url), init });
-      if (requests.length % 2 === 1) return new Response(JSON.stringify({ value: 'synthetic-oidc-token' }));
-      const packet = JSON.parse(init.body);
-      return new Response(
-        JSON.stringify({
-          outcome: 'created',
-          requestId: packet.requestId,
-          number: 12,
-          headSha: packet.expectedHeadSha,
-          baseSha: packet.expectedBaseSha,
-          automaticRetry: false,
-        }),
-      );
-    },
+function creatorFixture() {
+  const calls = [];
+  const pr = {
+    title: 'Promote validated change',
+    body: 'Source/run binding',
+    head: 'dev',
+    base: 'staging',
+    expectedHeadSha: head,
+    expectedBaseSha: old,
+    draft: false,
   };
-  return {
-    requests,
-    options,
-    pr: {
-      title: 'Promote validated change',
-      body: 'Public source/run reference',
-      head: 'dev',
-      base: 'staging',
-      expectedHeadSha: head,
-      expectedBaseSha: old,
-      draft: false,
-    },
+  const result = {
+    number: 12,
+    state: 'open',
+    draft: false,
+    head: { ref: 'dev', sha: head, repo: { id: 795522855 } },
+    base: { ref: 'staging', sha: old },
   };
+  const api = async path => (path.startsWith('/pulls?') ? [] : { object: { sha: path.endsWith('/dev') ? head : old } });
+  const authoringApi = async (path, body) => {
+    calls.push({ path, body });
+    return result;
+  };
+  return { calls, pr, result, api, authoringApi };
 }
-test('qualified broker client uses fixed audience/endpoint and stable intent across presentation changes', async () => {
-  const f = brokerFixture(),
-    create = brokerCreator(f.options);
-  await create(f.pr);
-  await create({ ...f.pr, body: 'Later run reference' });
-  const a = JSON.parse(f.requests[1].init.body),
-    b = JSON.parse(f.requests[3].init.body);
-  assert.equal(a.requestId, b.requestId);
-  assert.equal(a.repositoryId, 795522855);
-  assert.equal(a.expectedHeadSha, head);
-  assert.equal(a.expectedBaseSha, old);
-  assert.equal(new URL(f.requests[0].url).searchParams.get('audience'), 'ontoo-resx-authoring');
-  assert.equal(f.requests[1].url, 'https://resx-preview.ontoo.cloud/.well-known/ontoo-release/resx-authoring');
-  assert.equal(f.requests[1].init.redirect, 'error');
+test('native App creator sends only PR fields and validates exact returned source', async () => {
+  const f = creatorFixture();
+  await nativeCreator(f)(f.pr);
+  assert.deepEqual(f.calls, [{ path: '/pulls', body: { head: 'dev', base: 'staging', title: f.pr.title, body: f.pr.body, draft: false } }]);
 });
-test('broker client rejects foreign routes and credential endpoints before transmitting a bearer', async () => {
-  const f = brokerFixture();
-  await assert.rejects(brokerCreator(f.options)({ ...f.pr, head: 'codex/foreign' }));
-  await assert.rejects(brokerCreator({ ...f.options, requestUrl: 'https://evil.example/token' })(f.pr));
-  assert.equal(f.requests.length, 0);
+test('existing exact native PR is recovered without another write', async () => {
+  const f = creatorFixture(),
+    original = f.api;
+  f.api = path => (path.startsWith('/pulls?') ? [f.result] : original(path));
+  await nativeCreator(f)(f.pr);
+  assert.equal(f.calls.length, 0);
 });
-test('broker unknown result is not retried and mismatched response cannot authorize progress', async () => {
-  for (const kind of ['unknown', 'wrong-head', 'oversize']) {
-    const f = brokerFixture(),
-      original = f.options.fetchImpl;
-    f.options.fetchImpl = async (url, init) => {
-      if (!String(url).includes('/resx-authoring')) return original(url, init);
-      f.requests.push({ url: String(url), init });
-      if (kind === 'unknown') return new Response(JSON.stringify({ outcome: 'unknown' }), { status: 409 });
-      if (kind === 'oversize') return new Response('x'.repeat(8193));
-      const packet = JSON.parse(init.body);
-      return new Response(
-        JSON.stringify({ outcome: 'created', requestId: packet.requestId, number: 12, headSha: old, baseSha: old, automaticRetry: false }),
-      );
-    };
-    await assert.rejects(brokerCreator(f.options)(f.pr));
-    assert.equal(f.requests.filter(r => r.url.includes('/resx-authoring')).length, 1);
+test('native creator rejects foreign routes and ref drift before any App write', async () => {
+  for (const field of ['expectedHeadSha', 'expectedBaseSha', 'head']) {
+    const f = creatorFixture();
+    await assert.rejects(nativeCreator(f)({ ...f.pr, [field]: field === 'head' ? 'codex/foreign' : 'e'.repeat(40) }));
+    assert.equal(f.calls.length, 0);
   }
 });
-test('promotion and ancestry sync retain selected refs and reject movement before OIDC or authoring', async () => {
+test('unknown App POST has no in-call retry; wrong returned source fails closed', async () => {
+  for (const unknown of [true, false]) {
+    const f = creatorFixture();
+    let posts = 0;
+    f.authoringApi = async () => {
+      posts++;
+      if (unknown) throw Error('synthetic timeout');
+      return { ...f.result, head: { ...f.result.head, sha: old } };
+    };
+    await assert.rejects(nativeCreator(f)(f.pr));
+    assert.equal(posts, 1);
+  }
+});
+test('promotion and ancestry sync preserve original selected refs before native authoring', async () => {
   for (const sync of [false, true])
     for (const moved of ['head', 'base']) {
       const f = fixture(),
-        original = f.api,
-        broker = brokerFixture();
+        original = f.api;
       let devReads = 0,
-        stageReads = 0;
-      f.api = async (path, body, ...rest) => {
+        stageReads = 0,
+        posts = 0;
+      f.api = async (path, ...args) => {
         if (path === '/git/ref/heads/dev') return { object: { sha: ++devReads > 1 && moved === (sync ? 'base' : 'head') ? 'e'.repeat(40) : head } };
         if (path === '/git/ref/heads/staging')
           return { object: { sha: ++stageReads > 1 && moved === (sync ? 'head' : 'base') ? 'e'.repeat(40) : old } };
         if (sync && path.startsWith('/git/commits/')) return { tree: { sha: 'c'.repeat(40) } };
         if (sync && path.startsWith('/compare/')) return { status: 'ahead', merge_base_commit: { sha: head } };
-        return original(path, body, ...rest);
+        return original(path, ...args);
       };
-      const creator = brokerCreator({ ...broker.options, api: f.api });
+      const creator = nativeCreator({
+        api: f.api,
+        authoringApi: async () => {
+          posts++;
+        },
+      });
       await assert.rejects(
-        reconcile({ ...f, policyApp, validatedRun: sync ? { ...run, head_branch: 'staging', head_sha: old } : run, createPullRequest: creator }),
+        reconcile({ ...f, validatedRun: sync ? { ...run, head_branch: 'staging', head_sha: old } : run, createPullRequest: creator }),
       );
-      assert.equal(broker.requests.length, 0);
+      assert.equal(posts, 0);
     }
+});
+
+test('unprotected target rejects before any native mutation without querying Administration settings', async () => {
+  const f = fixture(),
+    original = f.api;
+  f.api = (path, ...args) => (path === '/branches/staging' ? { protected: false } : original(path, ...args));
+  await assert.rejects(reconcile({ ...f, validatedRun: run }));
+  assert.equal(f.calls.filter(x => x.body).length, 0);
+  assert.equal(
+    f.calls.some(x => x.path.endsWith('/protection')),
+    false,
+  );
 });

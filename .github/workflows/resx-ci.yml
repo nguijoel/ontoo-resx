@@ -58,7 +58,7 @@ jobs:
           // A dispatch on the integration tip may have no diff; still run full app validation.
           const scope=files.length?c.classify(files):{protected:true,documentationOnly:false,fileCount:0};
           fs.appendFileSync(process.env.GITHUB_OUTPUT,`documentation=${scope.documentationOnly}\n`);
-          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,JSON.stringify({source:process.env.HEAD_SHA,base,...scope})+'\nIndependent policy publisher remains the approval authority.\n');
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,JSON.stringify({source:process.env.HEAD_SHA,base,...scope})+'\nNative protected branches and CODEOWNERS remain the approval authority.\n');
           NODE
   application:
     name: RESX application tests and build

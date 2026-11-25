@@ -141,36 +141,21 @@ jobs:
           path: ${{ runner.temp }}/resx-release-receipt.json
           retention-days: 7
           if-no-files-found: error
-  request:
+  deployment:
+    name: RESX PRE controller integration
     if: always() && github.ref == 'refs/heads/staging' && vars.RESX_PRE_ENROLLED == 'true' && needs.enrollment.result == 'success' && (needs.image.result == 'success' || (inputs.action == 'rollback' && needs.image.result == 'skipped'))
     needs: [enrollment, image]
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 2
     environment: hosting-pre
-    permissions:
-      id-token: write
-      contents: read
+    permissions: {}
     steps:
-      - name: Submit constrained authenticated request
-        env:
-          ACTION: ${{ inputs.action || 'deploy' }}
-          RELEASE_ID: ${{ needs.image.outputs.release_id || inputs.release_id }}
+      - name: Fail closed until the existing controller transport is enrolled
         run: |
-          node <<'NODE'
-          (async()=>{try {
-            const action=process.env.ACTION,releaseId=process.env.RELEASE_ID;
-            if(!['deploy','rollback'].includes(action)||!/^[a-f0-9]{64}$/.test(releaseId||''))throw Error();
-            const url=new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);url.searchParams.set('audience','ontoo-resx-pre');
-            const tokenResponse=await fetch(url,{headers:{Authorization:'Bearer '+process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN},signal:AbortSignal.timeout(15000),redirect:'error'});
-            if(!tokenResponse.ok)throw Error();const token=(await tokenResponse.json()).value;if(typeof token!=='string')throw Error();
-            const response=await fetch('https://resx-preview.ontoo.cloud/.well-known/ontoo-release/resx-pre',{
-              method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
-              body:JSON.stringify({action,releaseId}),redirect:'error',signal:AbortSignal.timeout(75000)});
-            if(response.status!==202)throw Error();
-            console.log('Authenticated request accepted for independent validation; this is NOT deployment success.');
-          }catch{console.error('RESX_RELEASE_REQUEST_REJECTED');process.exitCode=1;}})();
-          NODE
+          echo 'RESX_CONTROLLER_TRANSPORT_NOT_INTEGRATED: no deployment was requested.' >&2
+          exit 1
 
-# The receiver waits for this run's successful terminal conclusion and independent
-# artifact/promotion/config/schema evidence before any controller mutation.
-# Only protected terminal release evidence and public smoke establish success.
+# Deliberately no custom HTTPS/OIDC ingress, queue, artifact collector or App key.
+# Infrastructure must supply the existing controller transport and its fixed
+# source/digest/config/DB/audit contract before this guard can be replaced.
+# Publication success alone must never report successful PRE deployment.
