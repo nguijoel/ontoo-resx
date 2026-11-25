@@ -9,6 +9,8 @@ on:
   check_run:
     types: [completed]
   workflow_dispatch:
+  schedule:
+    - cron: '*/5 * * * *'
 permissions: {}
 concurrency:
   group: resx-protected-reconcile

@@ -74,7 +74,7 @@ function policyBinding(checks, pr, policyApp, openPulls, now = Date.now()) {
   );
   return record;
 }
-async function reconcile({ api, policyApp, validatedRun }) {
+async function reconcile({ api, policyApp, validatedRun, createPullRequest }) {
   assert(Number.isSafeInteger(policyApp) && policyApp > 0 && policyApp !== CI_APP);
   const repo = await api('');
   assert(repo.id === REPOSITORY_ID && repo.full_name === REPOSITORY && repo.default_branch === 'dev' && repo.allow_auto_merge === true);
@@ -93,7 +93,15 @@ async function reconcile({ api, policyApp, validatedRun }) {
     if (fresh.head.sha !== pr.head.sha || fresh.draft || fresh.state !== 'open') continue;
     const currentBase = await api('/git/ref/heads/' + fresh.base.ref);
     if (currentBase.object.sha !== fresh.base.sha) continue;
-    policyBinding(checks, fresh, policyApp, prs);
+    const currentPulls = await api('/pulls?state=open&per_page=100', null, true);
+    try {
+      policyBinding(checks, fresh, policyApp, currentPulls);
+    } catch {
+      if (fresh.auto_merge) await api('/graphql-disable-auto-merge', { nodeId: fresh.node_id });
+      continue;
+    }
+    // Do not arm a deferred merge while native conversations/checks are unresolved.
+    if (fresh.mergeable !== true || fresh.mergeable_state !== 'clean') continue;
     // Native merge checks/reviews remain authoritative and are never bypassed.
     if (!fresh.auto_merge) await api('/graphql-enable-auto-merge', { nodeId: fresh.node_id });
   }
@@ -115,14 +123,15 @@ async function reconcile({ api, policyApp, validatedRun }) {
     const sync = prs.filter(p => p.base.ref === 'dev' && p.head.ref === 'staging' && p.head.repo?.id === REPOSITORY_ID);
     assert(sync.length <= 1);
     if (!sync.length) {
-      await api('/pulls', {
+      assert(typeof createPullRequest === 'function');
+      await createPullRequest({
         title: 'Synchronize verified RESX promotion ancestry',
         head: 'staging',
         base: 'dev',
         draft: false,
         body: 'Ancestry only: exact current dev/staging full Git trees match. Independent eligibility must verify current refs and prior promotion; no application/config/schema content change.',
       });
-      await api('/actions/workflows/resx-ci.yml/dispatches', { ref: 'staging' });
+      // A qualified App-authored PR triggers normal pull_request CI, not dispatch checks.
     }
     return;
   }
@@ -132,7 +141,8 @@ async function reconcile({ api, policyApp, validatedRun }) {
   const existing = prs.filter(p => p.base.ref === 'staging' && p.head.ref === 'dev' && p.head.repo?.id === REPOSITORY_ID);
   assert(existing.length <= 1);
   if (!existing.length) {
-    await api('/pulls', {
+    assert(typeof createPullRequest === 'function');
+    await createPullRequest({
       title: 'Promote validated RESX dev to staging',
       head: 'dev',
       base: 'staging',
@@ -144,9 +154,8 @@ async function reconcile({ api, policyApp, validatedRun }) {
         validatedRun.id +
         '. Independent policy eligibility and native branch checks remain required. No direct push or PROD operation.',
     });
-    // GITHUB_TOKEN-created PRs do not recursively start pull_request workflows.
-    // Explicit dispatch is one of GitHub's permitted token-triggered events.
-    await api('/actions/workflows/resx-ci.yml/dispatches', { ref: 'dev' });
+    // PR creation must use the qualified App broker. Dispatch checks cannot
+    // satisfy native required PR checks and are not a substitute.
   }
   // Existing promotion: no repeat dispatch, preventing workflow_run recursion.
 }
@@ -159,12 +168,15 @@ async function main() {
   const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
   if (event.workflow_run && event.workflow_run.conclusion !== 'success') return;
   const api = async (path, body, pagination) => {
-    if (path === '/graphql-enable-auto-merge') {
+    if (path === '/graphql-enable-auto-merge' || path === '/graphql-disable-auto-merge') {
       const r = await fetch('https://api.github.com/graphql', {
         method: 'POST',
         headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          query: 'mutation($id:ID!){enablePullRequestAutoMerge(input:{pullRequestId:$id,mergeMethod:MERGE}){pullRequest{id}}}',
+          query:
+            path === '/graphql-enable-auto-merge'
+              ? 'mutation($id:ID!){enablePullRequestAutoMerge(input:{pullRequestId:$id,mergeMethod:MERGE}){pullRequest{id}}}'
+              : 'mutation($id:ID!){disablePullRequestAutoMerge(input:{pullRequestId:$id}){pullRequest{id}}}',
           variables: { id: body.nodeId },
         }),
         redirect: 'error',

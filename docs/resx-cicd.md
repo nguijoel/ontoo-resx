@@ -14,8 +14,9 @@ product/demo change. CI/CD-POC-001 remains the acceptance contract.
   profile/TLS tests, API unit/build, preview SPA build. Verified prose-only changes
   skip app work. Aggregate required check: RESX CI.
 - resx-reconcile.yml: trusted dev checkout only, no PR execution/install;
-  native auto-merge plus validated dev-to-staging PR. Explicit dispatch for a
-  new token-created promotion; existing promotions do not recursively dispatch.
+  native auto-merge plus a validated dev-to-staging PR plan. A qualified App
+  creator is mandatory; ordinary GITHUB_TOKEN PR creation/dispatch is not used
+  as a substitute for merge-eligible PR validation.
 - resx-release.yml: staging-only allowlisted Git export, pinned image build,
   no-network native-module smoke, image archive plus separate receipt, constrained
   OIDC request. Missing enrollment fails; HTTP202 is ACCEPTED, not deployed.
@@ -58,7 +59,7 @@ needs exact independently reviewed scope evidence. No secrets in CI/evidence.
 | Rollback/recovery | Retained compatible predecessor contract | Pending |
 | Invalid/unauthorized request | Infra synthetic OIDC tests reported | Real verifier/receiver pending |
 
-Deploy ran20 Node control/orchestration tests +2 Python pattern tests successfully,
+Deploy ran22 Node control/orchestration tests +2 Python pattern tests successfully,
 including a synthetic second repository and cross-profile identity rejection.
 Workflow YAML parsed with js-yaml. The exporter reproduced the known deployed
 2d749 source archive byte-for-byte:328files/1955840tarbytes/SHA256
@@ -80,8 +81,9 @@ This proves CI for that exact checkpoint, not later heads or PRE delivery.
 Native dev/staging rules now require strict RESX CI bound to Actions App15368;
 PR/admin/conversation rules and no-force/no-delete remain. Independent eligibility
 contexts are not enrolled yet. Default Actions token is read-only. GitHub's
-combined create/approve-PR toggle is temporarily false; protected promotion needs
-it restored at activation, with independent policy rejecting bot approvals.
+combined create/approve-PR toggle is false. A qualified separate App creates
+promotion PRs; the workflow token never approves reviews. Independent policy
+rejects bot approvals. No toggle restoration is needed for that creation route.
 No automatic merge/deployment is activated by these partial settings.
 
 At subsequent source12582c48454a86a16c9346a914896b1ce7f8e4a2, full PR run
@@ -91,3 +93,43 @@ merge-eligible RESX CI context. Merge orchestration now additionally requires
 a short-lived independently published PR/base/head/open-PR-set binding, with
 already-enabled native auto-merge treated as idempotent. Native proof of this
 last orchestration guard remains pending independent publisher enrollment.
+
+## Native negative acceptance
+
+PR7 was an unmerged control-test fixture only, never a product candidate:
+https://github.com/nguijoel/ontoo-resx/pull/7 at
+8da751a219ca54c6b02c7c2da3d0d5a9357174a5. Required RESX CI
+check138985732104/run45549073791 failed as intended. Native merge returned
+HTTP405, Required status check RESX CI is failing. The same failed fixture was
+converted to draft; native merge returned HTTP405, Pull Request is still a draft.
+Both attempts left dev edbf651 unchanged. PR7 is closed unmerged; branch and
+evidence are retained. The draft case also had the known failing CI fixture;
+this does not claim an isolated all-green draft test.
+
+## Remaining integration requirements
+
+Current GitHub rules say token-created PR workflows require approval and
+workflow_dispatch checks do not satisfy PR-required checks. The prior dispatch
+workaround is withdrawn. Reconciliation now rejects absent qualified PR creation
+instead of silently creating manual-approval promotions. App creation must use
+the separately qualified authoring boundary, not the read-only evaluator.
+See https://docs.github.com/en/actions/concepts/security/github_token and
+https://docs.github.com/en/enterprise-cloud@latest/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks .
+
+A source-level auto-merge guard re-fetches the full relevant PR set and disarms
+an existing auto-merge if its bound decision is invalid. Native GitHub does not
+interpret decision expiry. A protected publisher invalidation/expiry watchdog
+and actual already-armed stale-decision test remain required before acceptance.
+No claim is made that a pre-enable check alone eliminates that lifecycle risk.
+
+As of this checkpoint, App registration awaits human GitHub account confirmation;
+independent review identity and narrow archive/availability policy disposition
+also remain unresolved. The only current human collaborator is nguijoel, also
+PR6 author. No self-approval, agent ACK or unqualified bot review is substituted.
+
+The qualified PR-creation adapter is currently NOT wired. Missing adapter fails
+closed rather than creating a token-authored PR whose checks require manual
+approval. Workflow dispatch remains integration/release orchestration only,
+never PR-check evidence. Publisher expiry invalidation and native stale-armed
+merge acceptance remain unfinished; the five-minute reconciliation schedule
+is a recovery aid, not a replacement for a working protected watchdog.

@@ -186,11 +186,7 @@ function createControls(profile) {
       scope = { protected: false, documentationOnly: true, fileCount: 0, ancestryOnly: true };
     } else scope = classify(files, roots, documentationRoots);
     const pullEvidence = ci.event === 'pull_request' && ci.pullRequestNumber === pr.number && ci.baseSha === baseSha;
-    const protectedDispatch =
-      ci.event === 'workflow_dispatch' &&
-      ci.headBranch === pr.head.ref &&
-      ((pr.base.ref === promotion && pr.head.ref === integration) || scope.ancestryOnly === true);
-    requireValue(pullEvidence || protectedDispatch, 'CI_EVENT_NOT_BOUND_TO_PR');
+    requireValue(pullEvidence, 'CI_EVENT_NOT_BOUND_TO_PR');
     requireValue(
       ci.applicationValidation === 'success' || (scope.documentationOnly && ci.applicationValidation === 'skipped' && pullEvidence),
       'INCOMPLETE_APPLICATION_VALIDATION',
