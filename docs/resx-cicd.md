@@ -1,4 +1,4 @@
-# ONTOO GitHub-native CI/CD — RESX first enrollment
+# ONTOO GitHub-native CI/CD â€” RESX first enrollment
 
 Status: source integration in progress; not activated. Updated 25 November 2026.
 The owner's simplified GOV-CICD-001 approval supersedes the earlier custom-service
@@ -62,6 +62,57 @@ README/CHANGELOG prose is checks-only. This still allows native auto-merge after
 required review. Review ownership can be narrowed later through a governed change.
 An author cannot approve their own PR; App-authored control/promotion PRs allow
 an authorized independent human review. Agent technical review is not that approval.
+
+## Enrollment readiness evidence (25 November)
+
+Native GitHub readback now confirms both dev and staging require one human
+approval, code-owner review and stale-review dismissal. Strict RESX CI/App15368,
+admin enforcement, conversation resolution and no-force/no-delete controls were
+preserved. This deliberately keeps every PR under review during enrollment,
+including currently ownerless prose. No merge or auto-merge operation was run.
+
+The `resx-ci-authoring` environment now exists (ID28557619890), with a custom
+branch policy allowing only `dev` of type `branch`; tags are not allowed. No App
+secret was provisioned by Deploy. The workflow/control increment is still local;
+creation of the environment does not make unmerged workflow source trusted.
+
+## Transition to risk-based review
+
+Keep the one-review enrollment rule until the reviewed CODEOWNERS/control files
+are installed on BOTH dev and staging, GitHub reports no CODEOWNERS syntax or
+owner-access errors, and an operator reads back the required CI/review rules.
+The risk-based ownership change itself is governance and requires authorised
+approval; it must not be self-approved by automation.
+
+Then use native CODEOWNERS with `* @nguijoel` as the fallback and explicit,
+app-owner-reviewed ownerless entries for named routine UI/prose files. Initial
+app-owner proposal is only `/webapp/src/app/shared/components/search/search.component.css`
+plus `/README.md` and `/CHANGELOG.md`. The current CSS file is a single search-icon
+font-size rule; adjacent TypeScript/templates remain owned. This proposal is NOT
+installed or exempted by this record. A future CSS/prose path exemption delegates
+risk for its future contents; it is not a semantic guarantee. Review its permitted
+scope explicitly before adopting it, and retain ownership if that scope is unclear.
+
+Do not exempt all api/src, webapp/src, docs or a file extension. All workflow/helper,
+governance, security/auth/tenant/permissions, infrastructure/container, DB
+migration/schema, runtime/environment/configuration, dependency/lock and unknown
+paths remain owned. New files remain material until classified through review.
+Apply material overrides after routine entries; GitHub uses the last matching
+case-sensitive pattern. CODEOWNERS itself always remains owned.
+
+Only after that reviewed ownership policy is on both base branches, change the
+global required-approval count from one to zero, retaining mandatory code-owner
+review, stale dismissal, strict CI and every other existing protection. This is
+what allows routine-only PRs to merge without a human while mixed/material PRs
+still require an authorised code owner. Zero global approvals alone is not a
+risk policy. A PR author cannot approve their own material PR; an independent
+human or App-authored PR is required. Never use a bot approval as a substitute.
+
+Source-risk mapping and representative routine/material/mixed/unknown/rename
+review checks must accompany that governance change; ordinary application code
+cannot downgrade its own protection through labels or caller booleans. Keep the
+current conservative rule if ownership coverage is incomplete. This transition
+is separate from PRE activation and does not require any deferred live release.
 
 ## Minimum remaining integration
 
