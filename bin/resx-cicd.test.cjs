@@ -18,9 +18,14 @@ function input() {
       workflowBlobSha256: 'd'.repeat(64),
       conclusion: 'success',
       checkRunId: 42,
+      event: 'pull_request',
+      pullRequestNumber: 7,
+      baseSha,
+      applicationValidation: 'success',
     },
     protectionsVerified: true,
     pr: {
+      number: 7,
       state: 'open',
       draft: false,
       author_association: 'OWNER',
@@ -145,4 +150,33 @@ test('same baseline supports a separately enrolled repository and rejects cross-
   assert.equal(alternate.sourceRoute(i.pr), 'integration');
   assert.equal(alternate.classify([{ status: 'modified', filename: 'src/ui.ts' }]).protected, false);
   assert.equal(alternate.classify([{ status: 'modified', filename: '.github/workflows/ci.yml' }]).protected, true);
+});
+
+test('WIP push or wrong PR/base cannot substitute a full PR validation run', () => {
+  for (const change of [
+    i => (i.ciEvidence.event = 'push'),
+    i => (i.ciEvidence.pullRequestNumber = 8),
+    i => (i.ciEvidence.baseSha = head),
+    i => (i.ciEvidence.applicationValidation = 'skipped'),
+  ]) {
+    const i = input();
+    change(i);
+    assert.throws(() => eligibility(i), /CI_EVENT_NOT_BOUND_TO_PR|INCOMPLETE_APPLICATION_VALIDATION/);
+  }
+});
+
+test('documentation build-skip requires repository enrollment, never a universal docs exemption', () => {
+  const c = require('./ontoo-cicd.cjs').createControls({
+    repository: 'example/docs-runtime',
+    repositoryId: 999998,
+    integrationBranch: 'dev',
+    promotionBranch: 'staging',
+    ciWorkflow: '.github/workflows/ci.yml',
+    ciCheck: 'CI',
+    ciAppId: 15368,
+    routineRoots: ['src'],
+  });
+  const result = c.classify([{ status: 'modified', filename: 'docs/page.md' }]);
+  assert.equal(result.documentationOnly, false);
+  assert.equal(result.protected, true);
 });

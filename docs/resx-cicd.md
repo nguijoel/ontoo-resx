@@ -9,6 +9,7 @@ product/demo change. CI/CD-POC-001 remains the acceptance contract.
 
 ## Implemented source, not live enforcement
 
+- resx-fast.yml: source-only WIP feedback, never emits full validation eligibility.
 - resx-ci.yml: read-only source/range tests; locked Linux dependency install;
   profile/TLS tests, API unit/build, preview SPA build. Verified prose-only changes
   skip app work. Aggregate required check: RESX CI.
@@ -57,7 +58,7 @@ needs exact independently reviewed scope evidence. No secrets in CI/evidence.
 | Rollback/recovery | Retained compatible predecessor contract | Pending |
 | Invalid/unauthorized request | Infra synthetic OIDC tests reported | Real verifier/receiver pending |
 
-Deploy ran15 Node control/orchestration tests +2 Python pattern tests successfully,
+Deploy ran17 Node control/orchestration tests +2 Python pattern tests successfully,
 including a synthetic second repository and cross-profile identity rejection.
 Workflow YAML parsed with js-yaml. The exporter reproduced the known deployed
 2d749 source archive byte-for-byte:328files/1955840tarbytes/SHA256
@@ -69,3 +70,16 @@ artifact/source/config/schema bindings and public health before claiming complet
 Baseline integration: dev edbf651 lacks deployed2d749 in draftPR5 (overlapping
 predecessorPR3). Reconcile reviewed source without duplicate merges; do not use
 pending feature as reason to skip controls. Keep DBsourcePR4 and WIP separate.
+
+## Native GitHub checkpoint
+
+At source d1795a3fd5b768b588c2a310d4149473b6cbcbdf, PR run
+https://github.com/nguijoel/ontoo-resx/actions/runs/45546711563 and push run
+https://github.com/nguijoel/ontoo-resx/actions/runs/45546711386 completed success.
+This proves CI for that exact checkpoint, not later heads or PRE delivery.
+Native dev/staging rules now require strict RESX CI bound to Actions App15368;
+PR/admin/conversation rules and no-force/no-delete remain. Independent eligibility
+contexts are not enrolled yet. Default Actions token is read-only. GitHub's
+combined create/approve-PR toggle is temporarily false; protected promotion needs
+it restored at activation, with independent policy rejecting bot approvals.
+No automatic merge/deployment is activated by these partial settings.

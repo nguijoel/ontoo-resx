@@ -9,6 +9,7 @@ const controls = require('./ontoo-cicd.cjs').createControls({
   ciCheck: 'RESX CI',
   ciAppId: 15368,
   routineRoots: ['api/src', 'webapp/src'],
+  documentationRoots: ['docs'],
 });
 if (require.main === module) {
   try {

@@ -6,7 +6,7 @@ const SHA = /^[a-f0-9]{40}$/;
 function requireValue(value, code) {
   if (!value) throw new Error(code);
 }
-function pathKind(path, routineRoots = []) {
+function pathKind(path, routineRoots = [], documentationRoots = []) {
   requireValue(
     typeof path === 'string' &&
       path.length > 0 &&
@@ -24,20 +24,26 @@ function pathKind(path, routineRoots = []) {
     )
   )
     return 'protected';
-  if (/^docs\/.*\.(?:md|txt)$/.test(path) || /^(?:README|CHANGELOG|CONTRIBUTING)\.md$/.test(path)) return 'documentation';
+  if (
+    (documentationRoots.some(root => path.startsWith(root + '/')) && /\.(?:md|txt)$/.test(path)) ||
+    /^(?:README|CHANGELOG|CONTRIBUTING)\.md$/.test(path)
+  )
+    return 'documentation';
   if (routineRoots.some(root => path.startsWith(root + '/')) && /\.(?:ts|tsx|js|jsx|html|css|scss|png|ico|cs)$/.test(path)) return 'routine';
   return 'protected'; // Unknown change categories require review, never an optimistic bypass.
 }
-function classify(files, routineRoots = []) {
+function classify(files, routineRoots = [], documentationRoots = []) {
   requireValue(Array.isArray(files) && files.length > 0 && files.length <= 3000, 'INCOMPLETE_DIFF');
   const kinds = files.flatMap(file => {
     requireValue(file && ['added', 'modified', 'removed', 'renamed', 'copied', 'changed'].includes(file.status), 'INCOMPLETE_DIFF');
     requireValue(file.status !== 'renamed' || typeof file.previous_filename === 'string', 'INCOMPLETE_RENAME');
-    return [file.filename, ...(file.previous_filename ? [file.previous_filename] : [])].map(path => pathKind(path, routineRoots));
+    return [file.filename, ...(file.previous_filename ? [file.previous_filename] : [])].map(path => pathKind(path, routineRoots, documentationRoots));
   });
   requireValue(!kinds.includes('forbidden'), 'FORBIDDEN_TRACKED_INPUT');
   const names = files.flatMap(f => [f.filename, ...(f.previous_filename ? [f.previous_filename] : [])]);
-  const documentationOnly = names.every(p => /^docs\/.*\.(?:md|txt)$/.test(p) || /^(?:README|CHANGELOG|CONTRIBUTING)\.md$/.test(p));
+  const documentationOnly = names.every(
+    p => (documentationRoots.some(root => p.startsWith(root + '/')) && /\.(?:md|txt)$/.test(p)) || /^(?:README|CHANGELOG|CONTRIBUTING)\.md$/.test(p),
+  );
   return { protected: kinds.includes('protected'), documentationOnly, fileCount: files.length };
 }
 function changedFiles(base, head) {
@@ -83,12 +89,23 @@ function createControls(profile) {
     Array.isArray(profile.routineRoots) && profile.routineRoots.every(p => /^[a-zA-Z0-9_/-]+$/.test(p) && !p.split('/').includes('..')),
     'INVALID_PATH_ENROLLMENT',
   );
-  profile = Object.freeze({ ...profile, routineRoots: Object.freeze([...profile.routineRoots]) });
+  requireValue(
+    profile.documentationRoots === undefined ||
+      (Array.isArray(profile.documentationRoots) &&
+        profile.documentationRoots.every(p => /^[a-zA-Z0-9_/-]+$/.test(p) && !p.split('/').includes('..'))),
+    'INVALID_DOCUMENTATION_ENROLLMENT',
+  );
+  profile = Object.freeze({
+    ...profile,
+    routineRoots: Object.freeze([...profile.routineRoots]),
+    documentationRoots: Object.freeze([...(profile.documentationRoots || [])]),
+  });
   const REPOSITORY = profile.repository,
     REPOSITORY_ID = profile.repositoryId;
   const integration = profile.integrationBranch,
     promotion = profile.promotionBranch,
     roots = profile.routineRoots;
+  const documentationRoots = profile.documentationRoots;
   function sourceRoute(pr) {
     requireValue(
       pr &&
@@ -167,7 +184,17 @@ function createControls(profile) {
         'UNVERIFIED_EMPTY_SYNC',
       );
       scope = { protected: false, documentationOnly: true, fileCount: 0, ancestryOnly: true };
-    } else scope = classify(files, roots);
+    } else scope = classify(files, roots, documentationRoots);
+    const pullEvidence = ci.event === 'pull_request' && ci.pullRequestNumber === pr.number && ci.baseSha === baseSha;
+    const protectedDispatch =
+      ci.event === 'workflow_dispatch' &&
+      ci.headBranch === pr.head.ref &&
+      ((pr.base.ref === promotion && pr.head.ref === integration) || scope.ancestryOnly === true);
+    requireValue(pullEvidence || protectedDispatch, 'CI_EVENT_NOT_BOUND_TO_PR');
+    requireValue(
+      ci.applicationValidation === 'success' || (scope.documentationOnly && ci.applicationValidation === 'skipped' && pullEvidence),
+      'INCOMPLETE_APPLICATION_VALIDATION',
+    );
     // Collected by protected orchestration, never accepted as a public request body.
     requireValue(
       Array.isArray(checks) &&
@@ -190,8 +217,8 @@ function createControls(profile) {
     sourceRoute,
     latestHumanApproval,
     eligibility,
-    classify: files => classify(files, roots),
-    pathKind: path => pathKind(path, roots),
+    classify: files => classify(files, roots, documentationRoots),
+    pathKind: path => pathKind(path, roots, documentationRoots),
     changedFiles,
   });
 }

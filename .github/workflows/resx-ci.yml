@@ -4,7 +4,7 @@ on:
     branches: [dev, staging]
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
   push:
-    branches: [dev, staging, 'codex/**', 'feature/**', 'fix/**']
+    branches: [dev, staging]
   workflow_dispatch:
 permissions:
   contents: read
