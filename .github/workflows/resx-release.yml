@@ -125,8 +125,8 @@ jobs:
           retention-days: 7
           if-no-files-found: error
   request:
-    if: always() && github.ref == 'refs/heads/staging' && vars.RESX_PRE_ENROLLED == 'true' && (needs.image.result == 'success' || (inputs.action == 'rollback' && needs.image.result == 'skipped'))
-    needs: image
+    if: always() && github.ref == 'refs/heads/staging' && vars.RESX_PRE_ENROLLED == 'true' && needs.enrollment.result == 'success' && (needs.image.result == 'success' || (inputs.action == 'rollback' && needs.image.result == 'skipped'))
+    needs: [enrollment, image]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     environment: hosting-pre
