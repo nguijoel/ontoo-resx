@@ -3,6 +3,16 @@ import { get } from 'lodash';
 export function errorToMessage(error: any, action = ''): string {
   const domainCode = get(error, 'error.error.code');
 
+  if (domainCode === 'PushCacheRefreshFailed') {
+    return 'Files were uploaded, but cache refresh failed. Contact an administrator before retrying.';
+  }
+  if (domainCode === 'PushFailed') {
+    return 'Resource push could not be completed. Some files may already have uploaded. Contact an administrator before retrying.';
+  }
+  if (domainCode === 'PushUnavailable') {
+    return 'Resource push to S3 is not configured for this environment. Download the resource files instead.';
+  }
+
   if (error.status === 429) {
     switch (action) {
       case 'Login':
