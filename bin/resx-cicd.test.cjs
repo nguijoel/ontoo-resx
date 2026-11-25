@@ -180,3 +180,6 @@ test('documentation build-skip requires repository enrollment, never a universal
   assert.equal(result.documentationOnly, false);
   assert.equal(result.protected, true);
 });
+
+// UNMERGED acceptance fixture: required CI must fail; never release this branch.
+test('EXPECTED_CI_ACCEPTANCE_FAILURE', () => { throw new Error('EXPECTED_CI_ACCEPTANCE_FAILURE'); });
