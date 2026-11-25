@@ -58,7 +58,7 @@ needs exact independently reviewed scope evidence. No secrets in CI/evidence.
 | Rollback/recovery | Retained compatible predecessor contract | Pending |
 | Invalid/unauthorized request | Infra synthetic OIDC tests reported | Real verifier/receiver pending |
 
-Deploy ran17 Node control/orchestration tests +2 Python pattern tests successfully,
+Deploy ran20 Node control/orchestration tests +2 Python pattern tests successfully,
 including a synthetic second repository and cross-profile identity rejection.
 Workflow YAML parsed with js-yaml. The exporter reproduced the known deployed
 2d749 source archive byte-for-byte:328files/1955840tarbytes/SHA256
@@ -83,3 +83,11 @@ contexts are not enrolled yet. Default Actions token is read-only. GitHub's
 combined create/approve-PR toggle is temporarily false; protected promotion needs
 it restored at activation, with independent policy rejecting bot approvals.
 No automatic merge/deployment is activated by these partial settings.
+
+At subsequent source12582c48454a86a16c9346a914896b1ce7f8e4a2, full PR run
+https://github.com/nguijoel/ontoo-resx/actions/runs/45547844398 and separate fast
+feedback45547831859 also completed success. Fast feedback does not publish the
+merge-eligible RESX CI context. Merge orchestration now additionally requires
+a short-lived independently published PR/base/head/open-PR-set binding, with
+already-enabled native auto-merge treated as idempotent. Native proof of this
+last orchestration guard remains pending independent publisher enrollment.

@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test'),
   assert = require('node:assert/strict');
-const { requiredChecks, successful, reconcile } = require('./resx-reconcile.cjs');
+const { requiredChecks, successful, policyBinding, reconcile } = require('./resx-reconcile.cjs');
 const head = 'a'.repeat(40),
   old = 'b'.repeat(40),
   policyApp = 999;
@@ -92,4 +92,78 @@ test('native staging merge receives a no-content ancestry sync, not an endless p
   const create = f.calls.find(x => x.path === '/pulls' && x.body);
   assert.equal(create.body.head, 'staging');
   assert.equal(create.body.base, 'dev');
+});
+
+test('merge decision rebinds exact PR/base/head/open-PR set and expires; old success cannot authorize moving base', () => {
+  const pr = { number: 7, base: { ref: 'dev', sha: old }, head: { sha: head, ref: 'codex/change' } };
+  const rows = checks('dev');
+  rows[1].output = {
+    text: JSON.stringify({
+      version: 1,
+      repositoryId: 795522855,
+      headSha: head,
+      destination: 'dev',
+      expiresAtMs: 2000,
+      pullRequests: [{ number: 7, baseSha: old, headRef: 'codex/change' }],
+    }),
+  };
+  assert.ok(policyBinding(rows, pr, policyApp, [pr], 1000));
+  assert.throws(() => policyBinding(rows, { ...pr, base: { ref: 'dev', sha: head } }, policyApp, [pr], 1000));
+  assert.throws(() => policyBinding(rows, pr, policyApp, [pr, { ...pr, number: 8 }], 1000));
+  assert.throws(() => policyBinding(rows, pr, policyApp, [pr], 3000));
+});
+
+test('only the exact unexpired bound decision enables native auto-merge; already enabled is idempotent', async () => {
+  for (const alreadyEnabled of [false, true]) {
+    const pr = {
+      number: 7,
+      draft: false,
+      state: 'open',
+      node_id: 'synthetic-node',
+      auto_merge: alreadyEnabled ? { enabled_by: { login: 'github-actions' } } : null,
+      base: { ref: 'dev', sha: old },
+      head: { sha: head, ref: 'codex/change', repo: { id: 795522855 } },
+    };
+    const f = fixture([pr]),
+      original = f.api;
+    f.api = async (path, body, ...rest) => {
+      if (path === '/git/ref/heads/dev') return { object: { sha: old } };
+      if (path.startsWith('/commits/')) {
+        const result = checks('dev');
+        result[1].output = {
+          text: JSON.stringify({
+            version: 1,
+            repositoryId: 795522855,
+            headSha: head,
+            destination: 'dev',
+            expiresAtMs: Date.now() + 30000,
+            pullRequests: [{ number: 7, baseSha: old, headRef: 'codex/change' }],
+          }),
+        };
+        return result;
+      }
+      if (path === '/pulls/7') return pr;
+      return original(path, body, ...rest);
+    };
+    await reconcile({ ...f, policyApp, validatedRun: null });
+    assert.equal(f.calls.filter(x => x.path === '/graphql-enable-auto-merge').length, alreadyEnabled ? 0 : 1);
+  }
+});
+
+test('canonical JSON member ordering is accepted without ignoring extra binding fields', () => {
+  const pr = { number: 7, base: { ref: 'dev', sha: old }, head: { sha: head, ref: 'codex/change' } };
+  const rows = checks('dev');
+  const record = {
+    version: 1,
+    repositoryId: 795522855,
+    headSha: head,
+    destination: 'dev',
+    expiresAtMs: 2000,
+    pullRequests: [{ baseSha: old, headRef: 'codex/change', number: 7 }],
+  };
+  rows[1].output = { text: JSON.stringify(record) };
+  assert.ok(policyBinding(rows, pr, policyApp, [pr], 1000));
+  record.pullRequests[0].unapproved = true;
+  rows[1].output.text = JSON.stringify(record);
+  assert.throws(() => policyBinding(rows, pr, policyApp, [pr], 1000));
 });

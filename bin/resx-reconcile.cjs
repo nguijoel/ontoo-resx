@@ -28,6 +28,52 @@ function successful(checks, sha, policyApp, branch) {
     return latest?.status === 'completed' && latest.conclusion === 'success';
   });
 }
+function policyBinding(checks, pr, policyApp, openPulls, now = Date.now()) {
+  const found = checks
+    .filter(c => c.name === 'ONTOO policy eligibility ' + pr.base.ref && c.app?.id === policyApp && c.head_sha === pr.head.sha)
+    .sort((a, b) => b.id - a.id)[0];
+  assert(
+    found?.status === 'completed' && found.conclusion === 'success' && typeof found.output?.text === 'string' && found.output.text.length <= 65536,
+  );
+  let record;
+  try {
+    record = JSON.parse(found.output.text);
+  } catch {
+    throw Error('RESX_POLICY_BINDING_REJECTED');
+  }
+  assert(
+    record.version === 1 &&
+      record.repositoryId === REPOSITORY_ID &&
+      record.headSha === pr.head.sha &&
+      record.destination === pr.base.ref &&
+      Number.isSafeInteger(record.expiresAtMs) &&
+      record.expiresAtMs > now &&
+      record.expiresAtMs <= now + 300000 &&
+      Array.isArray(record.pullRequests),
+  );
+  const relevant = openPulls
+    .filter(p => p.base.ref === pr.base.ref && p.head.sha === pr.head.sha)
+    .map(p => ({ number: p.number, baseSha: p.base.sha, headRef: p.head.ref }))
+    .sort((a, b) => a.number - b.number);
+  const bound = [...record.pullRequests].sort((a, b) => a.number - b.number);
+  assert(
+    bound.every(
+      p =>
+        p &&
+        Object.keys(p).length === 3 &&
+        ['number', 'baseSha', 'headRef'].every(k => Object.hasOwn(p, k)) &&
+        Number.isSafeInteger(p.number) &&
+        p.number > 0 &&
+        SHA.test(p.baseSha || '') &&
+        typeof p.headRef === 'string',
+    ),
+  );
+  const tuples = rows => rows.map(p => [p.number, p.baseSha, p.headRef]);
+  assert(
+    JSON.stringify(tuples(relevant)) === JSON.stringify(tuples(bound)) && relevant.some(p => p.number === pr.number && p.baseSha === pr.base.sha),
+  );
+  return record;
+}
 async function reconcile({ api, policyApp, validatedRun }) {
   assert(Number.isSafeInteger(policyApp) && policyApp > 0 && policyApp !== CI_APP);
   const repo = await api('');
@@ -45,8 +91,11 @@ async function reconcile({ api, policyApp, validatedRun }) {
     if (!successful(checks, pr.head.sha, policyApp, pr.base.ref)) continue;
     const fresh = await api('/pulls/' + pr.number);
     if (fresh.head.sha !== pr.head.sha || fresh.draft || fresh.state !== 'open') continue;
+    const currentBase = await api('/git/ref/heads/' + fresh.base.ref);
+    if (currentBase.object.sha !== fresh.base.sha) continue;
+    policyBinding(checks, fresh, policyApp, prs);
     // Native merge checks/reviews remain authoritative and are never bypassed.
-    await api('/graphql-enable-auto-merge', { nodeId: fresh.node_id });
+    if (!fresh.auto_merge) await api('/graphql-enable-auto-merge', { nodeId: fresh.node_id });
   }
   // Promotion is a protected PR, not a direct branch write. Only the current
   // successful dev run can create it; arbitrary dispatches cannot invent validation.
@@ -155,4 +204,4 @@ if (require.main === module)
     console.error('RESX_RECONCILIATION_REJECTED');
     process.exitCode = 1;
   });
-module.exports = { requiredChecks, successful, reconcile };
+module.exports = { requiredChecks, successful, policyBinding, reconcile };
