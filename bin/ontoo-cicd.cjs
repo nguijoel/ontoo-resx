@@ -191,6 +191,10 @@ function createControls(profile) {
       ci.applicationValidation === 'success' || (scope.documentationOnly && ci.applicationValidation === 'skipped' && pullEvidence),
       'INCOMPLETE_APPLICATION_VALIDATION',
     );
+    requireValue(
+      ci.imageValidation === 'success' || (scope.documentationOnly && ci.imageValidation === 'skipped' && pullEvidence),
+      'INCOMPLETE_IMAGE_VALIDATION',
+    );
     // Collected by protected orchestration, never accepted as a public request body.
     requireValue(
       Array.isArray(checks) &&

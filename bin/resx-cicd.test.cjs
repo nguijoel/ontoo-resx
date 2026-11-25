@@ -22,6 +22,7 @@ function input() {
       pullRequestNumber: 7,
       baseSha,
       applicationValidation: 'success',
+      imageValidation: 'success',
     },
     protectionsVerified: true,
     pr: {
@@ -158,10 +159,11 @@ test('WIP push or wrong PR/base cannot substitute a full PR validation run', () 
     i => (i.ciEvidence.pullRequestNumber = 8),
     i => (i.ciEvidence.baseSha = head),
     i => (i.ciEvidence.applicationValidation = 'skipped'),
+    i => (i.ciEvidence.imageValidation = 'skipped'),
   ]) {
     const i = input();
     change(i);
-    assert.throws(() => eligibility(i), /CI_EVENT_NOT_BOUND_TO_PR|INCOMPLETE_APPLICATION_VALIDATION/);
+    assert.throws(() => eligibility(i), /CI_EVENT_NOT_BOUND_TO_PR|INCOMPLETE_APPLICATION_VALIDATION|INCOMPLETE_IMAGE_VALIDATION/);
   }
 });
 
