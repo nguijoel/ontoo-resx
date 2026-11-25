@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test'),
   assert = require('node:assert/strict');
-const { requiredChecks, successful, policyBinding, reconcile, recoverMergeHandoff } = require('./resx-reconcile.cjs');
+const { requiredChecks, successful, policyBinding, reconcile, recoverMergeHandoff, brokerCreator } = require('./resx-reconcile.cjs');
 const head = 'a'.repeat(40),
   old = 'b'.repeat(40),
   policyApp = 999;
@@ -314,4 +314,72 @@ test('existing failed workflow evidence blocks redispatch; staging cannot accept
           : gapi(path, ...args);
   await assert.rejects(recoverMergeHandoff({ ...g, policyApp, automationActorId: 123, enrolled: true }));
   assert.equal(g.calls.filter(x => x.body).length, 0);
+});
+function brokerFixture() {
+  const requests = [];
+  const options = {
+    api: async path => ({ object: { sha: path.endsWith('/dev') ? head : old } }),
+    requestUrl: 'https://token.actions.githubusercontent.com/fixed-request',
+    requestToken: 'synthetic-runner-token',
+    recordIntent: () => {},
+    fetchImpl: async (url, init) => {
+      requests.push({ url: String(url), init });
+      if (requests.length % 2 === 1) return new Response(JSON.stringify({ value: 'synthetic-oidc-token' }));
+      const packet = JSON.parse(init.body);
+      return new Response(
+        JSON.stringify({
+          outcome: 'created',
+          requestId: packet.requestId,
+          number: 12,
+          headSha: packet.expectedHeadSha,
+          baseSha: packet.expectedBaseSha,
+          automaticRetry: false,
+        }),
+      );
+    },
+  };
+  return {
+    requests,
+    options,
+    pr: { title: 'Promote validated change', body: 'Public source/run reference', head: 'dev', base: 'staging', draft: false },
+  };
+}
+test('qualified broker client uses fixed audience/endpoint and stable intent across presentation changes', async () => {
+  const f = brokerFixture(),
+    create = brokerCreator(f.options);
+  await create(f.pr);
+  await create({ ...f.pr, body: 'Later run reference' });
+  const a = JSON.parse(f.requests[1].init.body),
+    b = JSON.parse(f.requests[3].init.body);
+  assert.equal(a.requestId, b.requestId);
+  assert.equal(a.repositoryId, 795522855);
+  assert.equal(a.expectedHeadSha, head);
+  assert.equal(a.expectedBaseSha, old);
+  assert.equal(new URL(f.requests[0].url).searchParams.get('audience'), 'ontoo-resx-authoring');
+  assert.equal(f.requests[1].url, 'https://resx-preview.ontoo.cloud/.well-known/ontoo-release/resx-authoring');
+  assert.equal(f.requests[1].init.redirect, 'error');
+});
+test('broker client rejects foreign routes and credential endpoints before transmitting a bearer', async () => {
+  const f = brokerFixture();
+  await assert.rejects(brokerCreator(f.options)({ ...f.pr, head: 'codex/foreign' }));
+  await assert.rejects(brokerCreator({ ...f.options, requestUrl: 'https://evil.example/token' })(f.pr));
+  assert.equal(f.requests.length, 0);
+});
+test('broker unknown result is not retried and mismatched response cannot authorize progress', async () => {
+  for (const kind of ['unknown', 'wrong-head', 'oversize']) {
+    const f = brokerFixture(),
+      original = f.options.fetchImpl;
+    f.options.fetchImpl = async (url, init) => {
+      if (!String(url).includes('/resx-authoring')) return original(url, init);
+      f.requests.push({ url: String(url), init });
+      if (kind === 'unknown') return new Response(JSON.stringify({ outcome: 'unknown' }), { status: 409 });
+      if (kind === 'oversize') return new Response('x'.repeat(8193));
+      const packet = JSON.parse(init.body);
+      return new Response(
+        JSON.stringify({ outcome: 'created', requestId: packet.requestId, number: 12, headSha: old, baseSha: old, automaticRetry: false }),
+      );
+    };
+    await assert.rejects(brokerCreator(f.options)(f.pr));
+    assert.equal(f.requests.filter(r => r.url.includes('/resx-authoring')).length, 1);
+  }
 });

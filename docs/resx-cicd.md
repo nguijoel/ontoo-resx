@@ -230,3 +230,26 @@ The final installed service closure must include that corrected identity code.
 All five release services remain inactive. Do not repeat the accepted store,
 import or qualification, or resume the failed filesystem transfer. This is actual
 identity/custody evidence, not automated promotion or live deployment acceptance.
+
+Infrastructure reports the complete inactive install succeeded once, protected
+receipt SHA256 `669954a676fb10cba208b877a2be651b513291de14e569a1ddacad26b69058f6`.
+Independent host readback matched24 public code files, six units and the nonlive
+Caddy snippet; the disabled enrollment separates15 loaded modules from24 installed
+inventory entries. The corrected identity code is now installed. Ingress identity
+is UID994/GID984, evaluator UID995/GID985; key metadata is unchanged. All five
+services are inactive; no daemon reload, profile/route/registry activation or live
+controller replacement occurred. Native runtime/endpoint qualification remains.
+
+The local PR-authoring client now implements the agreed fixed HTTPS/OIDC protocol
+at `/.well-known/ontoo-release/resx-authoring`, audience `ontoo-resx-authoring`.
+It permits only dev→staging and staging→dev requests, binds freshly read head/base
+SHAs and a stable semantic request ID, and accepts only the exact broker success
+schema. Tokens are request headers only; response sizes and deadlines are bounded.
+Unknown/rejected/network outcomes are not retried automatically under a new ID.
+The request ID and source refs are safe reconciliation evidence; titles/bodies and
+tokens are not logged. `RESX_AUTHORING_ENROLLED` remains unset; the actual broker
+route and separate App5891355 enrollment are not live. The trusted reconcile job's
+hosting-pre/OIDC capability is source only. Eighteen focused local orchestration/
+protocol tests passed; no live broker request, PR creation or native acceptance is
+claimed. Independent receiver enrollment, App scope and human governance review
+remain required; this client never obtains the PR-authoring App key/token.

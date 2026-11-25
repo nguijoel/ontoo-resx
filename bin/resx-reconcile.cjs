@@ -212,6 +212,73 @@ async function recoverMergeHandoff({ api, policyApp, automationActorId, enrolled
     });
   }
 }
+function brokerCreator({ api, fetchImpl = fetch, requestUrl, requestToken, recordIntent = row => console.log(JSON.stringify(row)) }) {
+  async function boundedJson(response, maximum) {
+    assert(response.body);
+    const chunks = [];
+    let bytes = 0;
+    for await (const chunk of response.body) {
+      bytes += chunk.length;
+      assert(bytes <= maximum);
+      chunks.push(Buffer.from(chunk));
+    }
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  }
+  // Fixed trusted endpoint. Candidate workflows never receive the App key/token.
+  return async pr => {
+    assert(pr?.draft === false && typeof pr.title === 'string' && pr.title.length > 0 && pr.title.length <= 200);
+    assert(typeof pr.body === 'string' && Buffer.byteLength(pr.body) <= 16000);
+    assert((pr.head === 'dev' && pr.base === 'staging') || (pr.head === 'staging' && pr.base === 'dev'));
+    const headSha = (await api('/git/ref/heads/' + pr.head)).object.sha;
+    const baseSha = (await api('/git/ref/heads/' + pr.base)).object.sha;
+    assert(SHA.test(headSha) && SHA.test(baseSha));
+    const intent = {
+      operation: 'create',
+      repositoryId: REPOSITORY_ID,
+      head: pr.head,
+      base: pr.base,
+      expectedHeadSha: headSha,
+      expectedBaseSha: baseSha,
+    };
+    // Exclude presentation/run IDs so a timeout cannot be retried under a new ID.
+    const requestId = require('node:crypto').createHash('sha256').update(JSON.stringify(intent)).digest('hex');
+    const packet = { ...intent, requestId, title: pr.title, body: pr.body };
+    const body = JSON.stringify(packet);
+    assert(Buffer.byteLength(body) <= 32768 && typeof requestToken === 'string' && requestToken.length > 0);
+    const url = new URL(requestUrl);
+    assert(
+      url.protocol === 'https:' &&
+        !url.username &&
+        !url.password &&
+        (!url.port || url.port === '443') &&
+        url.hostname.endsWith('.actions.githubusercontent.com'),
+    );
+    url.searchParams.set('audience', 'ontoo-resx-authoring');
+    const tokenResponse = await fetchImpl(url, {
+      headers: { Authorization: 'Bearer ' + requestToken },
+      redirect: 'error',
+      signal: AbortSignal.timeout(15000),
+    });
+    assert(tokenResponse.status === 200);
+    const tokenData = await boundedJson(tokenResponse, 32768);
+    assert(typeof tokenData.value === 'string' && tokenData.value.length > 0 && tokenData.value.length <= 16384);
+    recordIntent({ event: 'ONTOO_AUTHORING_REQUEST', requestId, repositoryId: REPOSITORY_ID, headSha, baseSha });
+    // Do not log responses: even error bodies are not operational evidence here.
+    const response = await fetchImpl('https://resx-preview.ontoo.cloud/.well-known/ontoo-release/resx-authoring', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + tokenData.value, 'Content-Type': 'application/json' },
+      body,
+      redirect: 'error',
+      signal: AbortSignal.timeout(120000),
+    });
+    if (response.status !== 200) throw Error('AUTHORING_UNCONFIRMED_PRESERVE_REQUEST_ID');
+    const result = await boundedJson(response, 8192);
+    assert(result && Object.keys(result).sort().join(',') === 'automaticRetry,baseSha,headSha,number,outcome,requestId');
+    assert(['created', 'existing'].includes(result.outcome) && result.requestId === requestId && result.automaticRetry === false);
+    assert(Number.isSafeInteger(result.number) && result.number > 0 && result.headSha === headSha && result.baseSha === baseSha);
+    return result;
+  };
+}
 async function main() {
   const fs = require('node:fs');
   assert(process.env.GITHUB_REPOSITORY === REPOSITORY && process.env.GITHUB_REF === 'refs/heads/dev');
@@ -261,7 +328,11 @@ async function main() {
     }
     throw Error('PAGINATION_INCOMPLETE');
   };
-  await reconcile({ api, policyApp, validatedRun: event.workflow_run });
+  const createPullRequest =
+    process.env.RESX_AUTHORING_ENROLLED === 'true'
+      ? brokerCreator({ api, requestUrl: process.env.ACTIONS_ID_TOKEN_REQUEST_URL, requestToken: process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN })
+      : undefined;
+  await reconcile({ api, policyApp, validatedRun: event.workflow_run, createPullRequest });
   await recoverMergeHandoff({
     api,
     policyApp,
@@ -275,4 +346,4 @@ if (require.main === module)
     console.error('RESX_RECONCILIATION_REJECTED');
     process.exitCode = 1;
   });
-module.exports = { requiredChecks, successful, policyBinding, reconcile, recoverMergeHandoff };
+module.exports = { requiredChecks, successful, policyBinding, reconcile, recoverMergeHandoff, brokerCreator };

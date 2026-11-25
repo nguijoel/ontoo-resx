@@ -20,11 +20,13 @@ jobs:
     if: github.ref == 'refs/heads/dev'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    environment: hosting-pre
     permissions:
       contents: write
       pull-requests: write
       actions: write
       checks: read
+      id-token: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -39,5 +41,6 @@ jobs:
           RESX_POLICY_APP_ID: ${{ vars.RESX_POLICY_APP_ID }}
           RESX_AUTOMATION_ACTOR_ID: ${{ vars.RESX_AUTOMATION_ACTOR_ID }}
           RESX_PRE_ENROLLED: ${{ vars.RESX_PRE_ENROLLED }}
+          RESX_AUTHORING_ENROLLED: ${{ vars.RESX_AUTHORING_ENROLLED }}
         run: node bin/resx-reconcile.cjs
 # No candidate checkout, package install, arbitrary script or deployment credential.
