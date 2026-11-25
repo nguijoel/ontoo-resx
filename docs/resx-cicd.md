@@ -133,3 +133,9 @@ approval. Workflow dispatch remains integration/release orchestration only,
 never PR-check evidence. Publisher expiry invalidation and native stale-armed
 merge acceptance remain unfinished; the five-minute reconciliation schedule
 is a recovery aid, not a replacement for a working protected watchdog.
+
+Linux image qualification is now part of the required CI aggregate for app
+changes: immutable context, pinned Linux base, isolated native-module smoke and
+actual docker-save format metadata. The earlier green CI checkpoints predate
+this stronger image gate; they do not claim image-gate success. Prose-only work
+skips both application and image jobs only under the enrolled source classifier.
