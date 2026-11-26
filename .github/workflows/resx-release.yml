@@ -187,6 +187,7 @@ jobs:
             ${{ runner.temp }}/resx-release-request.json
             ${{ runner.temp }}/resx-release-result.json
             ${{ runner.temp }}/resx-release-attempts.jsonl
+            ${{ runner.temp }}/resx-release-transport.json
           if-no-files-found: ignore
           retention-days: 90
 # No private key, raw SSH error, arbitrary remote command or custom ingress.

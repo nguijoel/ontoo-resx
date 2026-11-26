@@ -7,7 +7,16 @@ const crypto = require('node:crypto'),
 const HOST = '185.189.0.51',
   USER = 'ontoo-resx-pre-deploy',
   PIN = 'SHA256:5kusMUREWU3SqjdhScMHqnokrqvi4WcLJ5tDCy2cHcI';
+const HOST_KEY = 'AAAAC3NzaC1lZDI1NTE5AAAAIF5vI6R8M921fusUs79oLlUMPawhoXszXjClvC/ru4MI';
 const HEX = /^[a-f0-9]{64}$/;
+function knownHostLine(publicKey = HOST_KEY) {
+  demand(typeof publicKey === 'string' && /^[A-Za-z0-9+/]+={0,2}$/.test(publicKey));
+  const wire = Buffer.from(publicKey, 'base64');
+  demand(wire.toString('base64') === publicKey);
+  const fingerprint = 'SHA256:' + crypto.createHash('sha256').update(wire).digest('base64').replace(/=+$/, '');
+  demand(fingerprint === PIN);
+  return HOST + ' ssh-ed25519 ' + publicKey + '\n';
+}
 function demand(ok) {
   if (!ok) throw Error('RESX_RELEASE_UNCONFIRMED_NO_RETRY');
 }
@@ -173,21 +182,15 @@ async function main() {
     hosts = path.join(directory, 'known_hosts');
   const evidence = path.join(process.env.RUNNER_TEMP, 'resx-release-request.json');
   fs.writeFileSync(evidence, JSON.stringify(selected.packet) + '\n', { flag: 'wx', mode: 0o600 });
+  let phase = 'private-key-file',
+    sshInvoked = false;
   try {
     fs.writeFileSync(key, secret, { flag: 'wx', mode: 0o600 });
-    const scanned = invoke('/usr/bin/ssh-keyscan', ['-T', '10', '-t', 'ed25519', HOST], '');
-    const lines = scanned
-      .trim()
-      .split(/\r?\n/)
-      .filter(line => !line.startsWith('#'));
-    demand(lines.length === 1 && lines[0].startsWith(HOST + ' ssh-ed25519 '));
-    const fingerprint = invoke('/usr/bin/ssh-keygen', ['-lf', '-'], lines[0] + '\n')
-      .trim()
-      .split(/\s+/)[1];
-    demand(fingerprint === PIN);
-    fs.writeFileSync(hosts, lines[0] + '\n', { flag: 'wx', mode: 0o600 });
+    phase = 'host-key-pin';
+    fs.writeFileSync(hosts, knownHostLine(), { flag: 'wx', mode: 0o600 });
     const args = sshArguments(key, hosts);
     let result;
+    phase = 'attempt-evidence';
     const attempts = fs.openSync(path.join(process.env.RUNNER_TEMP, 'resx-release-attempts.jsonl'), 'wx', 0o600);
     try {
       result = await exchange(
@@ -195,6 +198,8 @@ async function main() {
         selected.releaseId,
         async () => {
           try {
+            phase = 'ssh-exchange';
+            sshInvoked = true;
             return { raw: invoke('/usr/bin/ssh', args, JSON.stringify(selected.packet) + '\n', 900000), exitCode: 0, timedOut: false };
           } catch (error) {
             return { raw: String(error.stdout || ''), exitCode: error.status, timedOut: !!error.signal || error.code === 'ETIMEDOUT' };
@@ -220,12 +225,20 @@ async function main() {
 
     fs.writeFileSync(path.join(process.env.RUNNER_TEMP, 'resx-release-result.json'), JSON.stringify(result) + '\n', { flag: 'wx', mode: 0o600 });
     demand(result.success);
+    phase = 'public-health';
     const health = await fetch('https://resx-preview.ontoo.cloud/health', { redirect: 'error', signal: AbortSignal.timeout(15000) });
     demand(health.status === 200);
     fs.appendFileSync(
       process.env.GITHUB_STEP_SUMMARY,
-      JSON.stringify(result) + '\nPublic HTTPS /health:200. Root receipt binds source/image/config/DB; no retry.\n',
+      JSON.stringify(result) + '\nPublic HTTPS /health:200. Root receipt binds source/image/config; application-only release, no DB migration.\n',
     );
+  } catch (error) {
+    fs.writeFileSync(
+      path.join(process.env.RUNNER_TEMP, 'resx-release-transport.json'),
+      JSON.stringify({ phase, sshInvoked, automaticRetry: false }) + '\n',
+      { flag: 'wx', mode: 0o600 },
+    );
+    throw error;
   } finally {
     for (const file of [key, hosts]) if (fs.existsSync(file)) fs.unlinkSync(file);
     fs.rmdirSync(directory);
@@ -236,4 +249,4 @@ if (require.main === module)
     console.error('RESX_RELEASE_UNCONFIRMED_PRESERVE_STATE_NO_RETRY');
     process.exitCode = 1;
   });
-module.exports = { request, response, decode, canonical, sshArguments, exchange, HOST, USER, PIN };
+module.exports = { request, response, decode, canonical, sshArguments, exchange, knownHostLine, HOST, USER, PIN };

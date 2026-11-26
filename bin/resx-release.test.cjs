@@ -191,3 +191,10 @@ test('BUSY wait is bounded and cannot become success without a confirmed termina
   assert.equal(sends, 21);
   assert.equal(waits, 20);
 });
+
+test('enrolled public host key matches the approved fingerprint without network discovery', () => {
+  const line = c.knownHostLine();
+  assert.equal(line, c.HOST + ' ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIF5vI6R8M921fusUs79oLlUMPawhoXszXjClvC/ru4MI\n');
+  assert.throws(() => c.knownHostLine('AAAAC3NzaC1lZDI1NTE5AAAAIF5vI6R8M921fusUs79oLlUMPawhoXszXjClvC/ru4MJ'));
+  assert.throws(() => c.knownHostLine('untrusted key'));
+});
