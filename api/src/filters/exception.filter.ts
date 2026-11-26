@@ -1,10 +1,22 @@
 import { ArgumentsHost, Catch, ExceptionFilter } from '@nestjs/common';
+import { PushUnavailableException, PUSH_UNAVAILABLE_MESSAGE } from '../errors/push-unavailable';
+import { PushFailedException } from '../errors/push-failed';
 
 @Catch()
 export class CustomExceptionFilter implements ExceptionFilter {
   catch(exception: any, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse();
+
+    if (exception instanceof PushFailedException) {
+      response.status(502).json({ error: { code: exception.publicCode, message: exception.publicMessage } });
+      return;
+    }
+
+    if (exception instanceof PushUnavailableException) {
+      response.status(503).json({ error: { code: 'PushUnavailable', message: PUSH_UNAVAILABLE_MESSAGE } });
+      return;
+    }
 
     // Re-map forbidden to not found
     if (exception.name === 'EntityNotFound' || exception.status === 404 || exception.status === 403) {

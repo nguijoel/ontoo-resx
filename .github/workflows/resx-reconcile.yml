@@ -1,0 +1,110 @@
+name: RESX protected merge and promotion
+on:
+  workflow_run:
+    workflows: ['RESX validation', 'RESX fast feedback']
+    types: [completed]
+  pull_request_target:
+    branches: [dev, staging]
+    types: [opened, synchronize, ready_for_review, reopened, edited, converted_to_draft]
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+  workflow_dispatch:
+  schedule:
+    - cron: '*/5 * * * *'
+permissions: {}
+concurrency:
+  group: resx-protected-reconcile
+  cancel-in-progress: false
+jobs:
+  review-event:
+    if: github.event_name == 'pull_request_review' && github.repository == 'nguijoel/ontoo-resx'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      actions: write
+    steps:
+      - name: Reconcile review changes through trusted dev controls
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node <<'NODE'
+          (async()=>{const r=await fetch('https://api.github.com/repos/nguijoel/ontoo-resx/actions/workflows/resx-reconcile.yml/dispatches',{
+            method:'POST',headers:{Authorization:'Bearer '+process.env.GH_TOKEN,'Content-Type':'application/json'},
+            body:JSON.stringify({ref:'dev'}),redirect:'error',signal:AbortSignal.timeout(20000)});
+            if(r.status!==204)throw Error();})().catch(()=>{console.error('REVIEW_RECONCILIATION_UNCONFIRMED');process.exitCode=1;});
+          NODE
+  reconcile:
+    if: github.ref == 'refs/heads/dev' && github.repository == 'nguijoel/ontoo-resx' && vars.RESX_AUTHORING_ENROLLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: resx-ci-authoring
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+      checks: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: refs/heads/dev
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.23.5'
+      - name: Mint repository-scoped PR-authoring token
+        id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: Iv23liqAxSuC1gZIKmTo
+          private-key: ${{ secrets.ONTOO_DEVELOPMENT_APP_PRIVATE_KEY }}
+          owner: nguijoel
+          repositories: ontoo-resx
+          permission-contents: read
+          permission-pull-requests: write
+      - name: Verify and audit token scope (no token output)
+        env:
+          APP_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          INSTALLATION_ID: ${{ steps.app.outputs.installation-id }}
+        run: |
+          node <<'NODE'
+          (async()=>{
+            if(process.env.APP_SLUG!=='ontoo-development'||process.env.INSTALLATION_ID!=='185090623')throw Error();
+            const r=await fetch('https://api.github.com/installation/repositories?per_page=100',{
+              headers:{Authorization:'Bearer '+process.env.APP_TOKEN,Accept:'application/vnd.github+json'},
+              redirect:'error',signal:AbortSignal.timeout(20000)});
+            if(!r.ok)throw Error();const d=await r.json();
+            if(d.total_count!==1||d.repositories?.length!==1||d.repositories[0].id!==795522855)throw Error();
+            require('node:fs').appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+              'App 5891355; installation 185090623; token repository 795522855; contents read / PR write; job-end revocation enabled.\n');
+          })().catch(()=>{console.error('APP_SCOPE_REJECTED');process.exitCode=1;});
+          NODE
+      - name: Mint isolated risk-check token
+        if: vars.RESX_RISK_ENROLLED == 'true'
+        id: risk
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: Iv23liPljIg7kku5IYRk
+          private-key: ${{ secrets.ONTOO_RESX_RISK_APP_PRIVATE_KEY }}
+          owner: nguijoel
+          repositories: ontoo-resx
+          permission-checks: write
+          permission-metadata: read
+      - name: Verify risk-check issuer
+        if: vars.RESX_RISK_ENROLLED == 'true'
+        env:
+          APP_SLUG: ${{ steps.risk.outputs.app-slug }}
+          INSTALLATION_ID: ${{ steps.risk.outputs.installation-id }}
+        run: |
+          test "$APP_SLUG" = ontoo-release-evaluator
+          test "$INSTALLATION_ID" = 185732896
+          echo 'Risk issuer App5919556/install185732896; token scoped to RESX Checks write/Metadata read; job-end revocation enabled.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Reconcile exact protected source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_APP_TOKEN: ${{ steps.app.outputs.token }}
+          GH_RISK_TOKEN: ${{ steps.risk.outputs.token }}
+          RESX_AUTOMATION_ACTOR_ID: ${{ vars.RESX_AUTOMATION_ACTOR_ID }}
+          RESX_PRE_ENROLLED: ${{ vars.RESX_PRE_ENROLLED }}
+        run: node bin/resx-reconcile.cjs
+# Trusted dev checkout only. No PR checkout/package install. App token is revoked by the pinned action post-step.

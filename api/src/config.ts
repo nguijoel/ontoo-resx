@@ -7,7 +7,12 @@ import { SnakeNamingStrategy } from './utils/snake-naming-strategy';
 
 const env = process.env;
 
-if(env.NODE_ENV === 'dev'){ dotenv.config(); }
+if (['resx-hosted-pre', 'resx-local-dev'].includes(env.TR_RUNTIME_PROFILE)) {
+  require(join(__dirname, '../../bin/resx-runtime-profile.cjs')).assertRuntimeEnvironment(env);
+} else if (env.TR_RUNTIME_PROFILE === 'resx-phase1') {
+  // The dedicated launcher supplies a clean, validated environment.
+  require(join(__dirname, '../../bin/resx-phase1-profile.cjs')).assertRuntimeEnvironment(env);
+} else if(env.NODE_ENV === 'dev'){ dotenv.config(); }
 else dotenv.config({
   path: join(__dirname, '..', '.env'),
   override: false,

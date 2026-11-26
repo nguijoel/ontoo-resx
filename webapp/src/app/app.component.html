@@ -1,5 +1,13 @@
-<div class="full-screen-sm d-flex flex-column overflow-sm-hidden">
+<div class="runtime-shell full-screen-sm d-flex flex-column overflow-sm-hidden">
   <app-loading-indicator [enabled]="isLoading$ | async" style="z-index: 600"></app-loading-indicator>
   <app-bar *ngIf="isAuthenticated$ | async" style="z-index: 500"></app-bar>
   <div class="flex-1 h-100"><router-outlet></router-outlet></div>
+  <footer class="runtime-info" aria-label="Application environment">
+    <ng-container *ngIf="runtimeInfo$ | async as info; else unavailable">
+      <div>{{ info.application }} v{{ info.version }} | {{ info.environment }}</div>
+      <div>Database {{ info.database.engine }} | <span *ngIf="info.database.version; else noVersion">v{{ info.database.version }}</span> | {{ info.database.location }}</div>
+      <ng-template #noVersion>Version unavailable</ng-template>
+    </ng-container>
+    <ng-template #unavailable>RESX | Runtime details unavailable</ng-template>
+  </footer>
 </div>
