@@ -139,7 +139,17 @@ test('ready PR uses exact-head native merge for clean or optional-check unstable
         if (path === '/pulls/7') return pr;
         return original(path, body, ...rest);
       };
-      await reconcile({ ...f, policyApp, validatedRun: null });
+      const handoffs = [];
+      await reconcile({
+        ...f,
+        policyApp,
+        validatedRun: null,
+        onMerged: async m => {
+          handoffs.push(m);
+        },
+      });
+      assert.equal(handoffs.length, merges.length);
+      if (merges.length) assert.deepEqual(handoffs[0], { number: 7, branch: 'dev', sha: 'f'.repeat(40) });
       assert.equal(merges.length, !alreadyEnabled && ['clean', 'unstable'].includes(state) ? 1 : 0);
       if (merges.length) assert.deepEqual(merges[0], { body: { sha: head, merge_method: 'merge' }, method: 'PUT' });
       assert.equal(f.calls.filter(x => x.path === '/graphql-enable-auto-merge').length, 0);
@@ -495,5 +505,56 @@ test('actual main HTTP adapter preserves PUT and exact SHA for an eligible ready
     }
     fs.unlinkSync(event);
     fs.rmdirSync(directory);
+  }
+});
+
+test('confirmed merge hands off without a commit-search index or scheduler, after bounded ref visibility wait', async () => {
+  const f = handoffFixture(),
+    original = f.api;
+  let refs = 0,
+    waits = 0;
+  f.api = async (path, ...args) => {
+    if (path.startsWith('/commits/')) throw Error('Search index not yet visible');
+    if (path === '/git/ref/heads/dev' && ++refs === 1) return { object: { sha: old } };
+    return original(path, ...args);
+  };
+  await recoverMergeHandoff({
+    ...f,
+    enrolled: true,
+    automationActorId: 123,
+    confirmedMerge: { number: 9, branch: 'dev', sha: head },
+    delay: async ms => {
+      assert.equal(ms, 2000);
+      waits++;
+    },
+  });
+  assert.equal(waits, 1);
+  assert.equal(f.calls.filter(x => x.path.endsWith('/dispatches')).length, 1);
+  assert.equal(f.comments.length, 1);
+});
+
+test('confirmed merge never dispatches if the branch or merged PR cannot verify the returned commit', async () => {
+  for (const moved of [true, false]) {
+    const f = handoffFixture(),
+      original = f.api;
+    let waits = 0;
+    f.api = async (path, ...args) => {
+      if (moved && path === '/git/ref/heads/dev') return { object: { sha: old } };
+      const value = await original(path, ...args);
+      return !moved && path === '/pulls/9' ? { ...value, merge_commit_sha: old } : value;
+    };
+    await assert.rejects(
+      recoverMergeHandoff({
+        ...f,
+        enrolled: true,
+        automationActorId: 123,
+        confirmedMerge: { number: 9, branch: 'dev', sha: head },
+        delay: async () => {
+          waits++;
+        },
+      }),
+    );
+    assert.equal(waits, moved ? 5 : 0);
+    assert.equal(f.calls.filter(x => x.body).length, 0);
   }
 });
