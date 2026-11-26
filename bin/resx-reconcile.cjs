@@ -55,9 +55,15 @@ async function reconcile({ api, validatedRun, createPullRequest }) {
       continue;
     }
     // Do not arm a deferred merge while native conversations/checks are unresolved.
-    if (fresh.mergeable !== true || fresh.mergeable_state !== 'clean') continue;
-    // Native merge checks/reviews remain authoritative and are never bypassed.
-    if (!fresh.auto_merge) await api('/graphql-enable-auto-merge', { nodeId: fresh.node_id });
+    if (fresh.mergeable !== true || !['clean', 'unstable'].includes(fresh.mergeable_state)) continue;
+    // Like gh pr merge --auto, already-ready PRs use the native merge endpoint.
+    // GitHub rejects deferred auto-merge enrollment for immediately mergeable PRs.
+    // Optional checks may make the state unstable; required CI/risk and native
+    // protection still decide admission. Never arm a deferred stale decision.
+    if (!fresh.auto_merge) {
+      const merged = await api('/pulls/' + fresh.number + '/merge', { sha: fresh.head.sha, merge_method: 'merge' }, undefined, 'PUT');
+      assert(merged.merged === true && SHA.test(merged.sha || ''));
+    }
   }
   // Promotion is a protected PR, not a direct branch write. Only the current
   // successful dev run can create it; arbitrary dispatches cannot invent validation.
@@ -285,15 +291,12 @@ async function main() {
   const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
   if (event.workflow_run && event.workflow_run.conclusion !== 'success') return;
   const request = async (authToken, path, body, pagination, method) => {
-    if (path === '/graphql-enable-auto-merge' || path === '/graphql-disable-auto-merge') {
+    if (path === '/graphql-disable-auto-merge') {
       const r = await fetch('https://api.github.com/graphql', {
         method: 'POST',
         headers: { Authorization: 'Bearer ' + authToken, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          query:
-            path === '/graphql-enable-auto-merge'
-              ? 'mutation($id:ID!){enablePullRequestAutoMerge(input:{pullRequestId:$id,mergeMethod:MERGE}){pullRequest{id}}}'
-              : 'mutation($id:ID!){disablePullRequestAutoMerge(input:{pullRequestId:$id}){pullRequest{id}}}',
+          query: 'mutation($id:ID!){disablePullRequestAutoMerge(input:{pullRequestId:$id}){pullRequest{id}}}',
           variables: { id: body.nodeId },
         }),
         redirect: 'error',
@@ -325,7 +328,7 @@ async function main() {
     }
     throw Error('PAGINATION_INCOMPLETE');
   };
-  const api = (path, body, pagination) => request(token, path, body, pagination);
+  const api = (path, body, pagination, method) => request(token, path, body, pagination, method);
   const createPullRequest = authoringToken ? nativeCreator({ api, authoringApi: (path, body) => request(authoringToken, path, body) }) : undefined;
   if (riskToken)
     await risk.publish({
@@ -347,4 +350,4 @@ if (require.main === module)
     console.error('RESX_RECONCILIATION_REJECTED');
     process.exitCode = 1;
   });
-module.exports = { successful, reconcile, recoverMergeHandoff, nativeCreator, openFeature, latestValidatedTip };
+module.exports = { successful, reconcile, recoverMergeHandoff, nativeCreator, openFeature, latestValidatedTip, main };

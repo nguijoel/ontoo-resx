@@ -15,7 +15,7 @@ one deliverable; it supersedes the earlier deferral of those proofs.
   force pushes/deletion. MERGE-only is now configured; squash/rebase are disabled
   so merged source, parents and approval provenance remain unambiguous.
 - The trusted dev Actions job publishes risk checks using a separately scoped
-  existing RESX-only Checks-write App, subject to the pending key-custody approval.
+  existing RESX-only Checks-write App with approved protected Actions key custody.
   This is a native job, not an evaluator/publisher/watchdog service. Binding the
   required context to its specific App prevents candidate Actions code from
   forging a same-name success through shared Actions App15368.
@@ -81,9 +81,10 @@ apply these final rules before the signed issuer/proof is operational.
   Contents read/PR write; the risk token is ONLY Checks write/Metadata read for
   that repository. Tokens are short-lived and revoked by post-job actions. Public
   installation/scope IDs are audited; keys/tokens are never logged.
-- Reusing existing repo-only App5919556 in this protected native job is a separate
-  pending Actions key-custody decision. It adds no App, permission, repository or
-  service. The existing standalone service files remain inactive/excluded.
+- Existing repo-only App5919556 protected-job custody was approved and provisioned
+  from its existing SSM version1 into dev-only resx-ci-authoring, secret
+  ONTOO_RESX_RISK_APP_PRIVATE_KEY. Native job use still needs qualification.
+  This adds no App, permission, repository or service. The existing standalone service files remain inactive/excluded.
 - Neither trusted job executes candidate code or installs candidate packages.
   Branch-only environment restrictions plus owned workflow/helper files protect
   secret access; GitHub environments do not allowlist individual workflow files.
@@ -145,13 +146,13 @@ owned bound at most840 seconds, and native job25 minutes; waiting before stop
 is separate from the planned single-active outage budget.
 
 Current shared controller is Media-qualified622cfcda1d6239515f31742e1ae4dd744e30f6eb90d29d034e625c5dbc010030;
-its existing-RESX update path still needs the selected adapter. Do not overwrite
-it with the historical first-install controller. No PRE enrollment flag may be
+the separately installed native adapter reuses its validation/admission boundary.
+Do not overwrite it with the historical first-install controller. No PRE enrollment flag may be
 activated until the SSH, controller and all release bindings are qualified.
 
 The standing maximum300-second single-active PRE interruption/retained-recovery
-exception is pending owner disposition against GOV-CICD-001 continuity wording.
-No outage is authorised by assumption. The300-second limit is the planned
+exception was approved by the owner in Deploy turn01a214cb-4960 and recorded by
+Infrastructure in the exact transition authorization ffc4a50b. The300-second limit is the planned
 transition budget, not a promise of recovery during host/daemon failure: UNKNOWN
 stops further mutation and can require protected recovery. The no-AWS profile/TR_SECRET stay paired
 with the predecessor; optional S3 enablement is a later protected config release.
@@ -194,3 +195,26 @@ not live promotion, deployment or rollback acceptance.
 Delivery order: first automatic healthy PRE application release, then repeat
 deployment proof, then rollback proof. Later demonstrations are not prerequisites
 to the first release; essential retained recovery and release protections remain.
+
+
+Ready-PR API integration: after exact required CI/risk, source/base, review and
+inventory validation, the trusted Actions job uses GitHub's normal merge endpoint
+with the selected head SHA and MERGE method. Like `gh pr merge --auto`, a ready
+PR merges immediately; it is not submitted to deferred auto-merge enrollment.
+CLEAN and optional-check UNSTABLE states are eligible only with all required
+proofs; BLOCKED/BEHIND/DIRTY/unknown states remain rejected. Native protections
+are enforced, without admin/force bypass. An already-armed PR remains native.
+GitHub CLI implementation reference:
+https://github.com/cli/cli/blob/trunk/pkg/cmd/pr/merge/merge.go
+
+
+Current checkpoint (25 November): PR8 merged normally through enforced protections
+at30614fa after owner review6065781906 and successful required CI. Authoring and
+risk keys are provisioned. Host activation receipt8c7e90ce binds the enabled
+restricted receiver; GitHub deployment flags remain off, original PRE is healthy
+and unchanged, and no first/repeat/rollback deployment proof has run. Infrastructure
+paused after this task at the owner's request; the owner subsequently resumed
+first-PRE delivery while deferring repeat-deployment and rollback demonstrations.
+Authoring/risk native jobs are enrolled for credential qualification, with
+conservative branch reviews unchanged and PRE deployment still disabled. The local ready-PR adapter correction passes23 focused tests, including
+actual main-to-HTTP PUT forwarding; it still needs normal control-PR integration.
