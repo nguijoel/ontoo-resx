@@ -14,7 +14,7 @@ function successful(checks, sha, branch) {
     .sort((a, b) => b.id - a.id)[0];
   return latest?.status === 'completed' && latest.conclusion === 'success' && proof?.status === 'completed' && proof.conclusion === 'success';
 }
-async function reconcile({ api, validatedRun, createPullRequest }) {
+async function reconcile({ api, validatedRun, createPullRequest, onMerged }) {
   const repo = await api('');
   assert(
     repo.id === REPOSITORY_ID &&
@@ -63,6 +63,10 @@ async function reconcile({ api, validatedRun, createPullRequest }) {
     if (!fresh.auto_merge) {
       const merged = await api('/pulls/' + fresh.number + '/merge', { sha: fresh.head.sha, merge_method: 'merge' }, undefined, 'PUT');
       assert(merged.merged === true && SHA.test(merged.sha || ''));
+      if (onMerged) await onMerged({ number: fresh.number, branch: fresh.base.ref, sha: merged.sha });
+      // The integration tip changed. Its new validation will select promotion;
+      // never continue using this invocation's pre-merge branch snapshots.
+      return;
     }
   }
   // Promotion is a protected PR, not a direct branch write. Only the current
@@ -145,17 +149,40 @@ async function reconcile({ api, validatedRun, createPullRequest }) {
 // after an uncertain dispatch result. Comment-creation ambiguity can cause a
 // metadata retry; only the locked controller enforces deployment idempotency.
 // The worker validates the exact SHA again.
-async function recoverMergeHandoff({ api, automationActorId, enrolled }) {
+async function recoverMergeHandoff({
+  api,
+  automationActorId,
+  enrolled,
+  confirmedMerge,
+  delay = ms => new Promise(resolve => setTimeout(resolve, ms)),
+}) {
   if (!enrolled) return;
   assert(Number.isSafeInteger(automationActorId) && automationActorId > 0);
+  if (confirmedMerge)
+    assert(
+      Number.isSafeInteger(confirmedMerge.number) &&
+        confirmedMerge.number > 0 &&
+        ['dev', 'staging'].includes(confirmedMerge.branch) &&
+        SHA.test(confirmedMerge.sha),
+    );
   const repo = await api('');
   assert(repo.id === REPOSITORY_ID && repo.full_name === REPOSITORY && repo.default_branch === 'dev');
   for (const branch of ['dev', 'staging']) {
+    if (confirmedMerge && branch !== confirmedMerge.branch) continue;
     assert((await api('/branches/' + branch)).protected === true);
-    const sha = (await api('/git/ref/heads/' + branch)).object.sha;
+    let sha;
+    for (let attempt = 0; attempt < 6; attempt++) {
+      sha = (await api('/git/ref/heads/' + branch)).object.sha;
+      if (!confirmedMerge || sha === confirmedMerge.sha) break;
+      if (attempt < 5) await delay(2000);
+    }
+    assert(!confirmedMerge || sha === confirmedMerge.sha);
     assert(SHA.test(sha));
-    const pulls = await api('/commits/' + sha + '/pulls?per_page=100', null, true);
+    // An authenticated successful merge supplies its exact PR/commit directly;
+    // do not depend on the eventually-consistent commit-to-PR search index.
+    const pulls = confirmedMerge ? [await api('/pulls/' + confirmedMerge.number)] : await api('/commits/' + sha + '/pulls?per_page=100', null, true);
     const candidates = pulls.filter(p => p.merge_commit_sha === sha && p.merged_at && p.state === 'closed' && p.base.ref === branch);
+    if (confirmedMerge) assert(candidates.length === 1);
     if (!candidates.length) continue;
     assert(candidates.length === 1);
     const pr = await api('/pulls/' + candidates[0].number);
@@ -336,7 +363,14 @@ async function main() {
       checkApi: (path, body, method) => request(riskToken, path, body, undefined, method),
       pulls: await api('/pulls?state=open&per_page=100', null, true),
     });
-  await reconcile({ api, validatedRun: await latestValidatedTip(api), createPullRequest });
+  const handoff = confirmedMerge =>
+    recoverMergeHandoff({
+      api,
+      automationActorId: Number(process.env.RESX_AUTOMATION_ACTOR_ID),
+      enrolled: process.env.RESX_PRE_ENROLLED === 'true',
+      confirmedMerge,
+    });
+  await reconcile({ api, validatedRun: await latestValidatedTip(api), createPullRequest, onMerged: handoff });
   await openFeature({ api, run: event.workflow_run, createPullRequest });
   await recoverMergeHandoff({
     api,
