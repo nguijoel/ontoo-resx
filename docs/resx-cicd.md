@@ -265,3 +265,34 @@ its explicit proof; parser presence alone is not implementation. No SQL, migrati
 database restore, S3 push or production operation is part of this work. Record first healthy PRE,
 subsequent update and rollback/recovery receipts separately; do not count an old
 healthy homepage or a completed image build as deployment acceptance.
+
+### Integration completion handoff and current PRE checkpoint
+
+After owner approval, PR13 merged into dev `f2701d3`. Its integration CI
+[46073376017](https://github.com/nguijoel/ontoo-resx/actions/runs/46073376017)
+succeeded, but no completion-triggered reconciliation was observed. One recorded
+enrollment reconciliation created App-authored PR16. PR16's normal PR CI succeeded;
+its `workflow_run` reconciliation then merged staging `ae57bc9` and dispatched
+release [46075711092](https://github.com/nguijoel/ontoo-resx/actions/runs/46075711092)
+automatically. These enrollment interventions are not unattended repeat proof.
+
+The completion job added here explicitly dispatches the fixed trusted reconciler
+after successful integration validation. It runs only for `workflow_dispatch` on
+this repository's dev/staging refs, depends on the required validation job, executes
+no checkout, and receives only job-scoped Actions write permission. PR validation
+does not receive this permission. The notification is scheduling evidence: the
+reconciler still reads current protected refs and the latest actual CI attempt.
+It polls at most five times at two-second intervals if that run is not yet terminal;
+failure, a moved tip, or a still-pending run cannot substitute an older green run.
+A delayed notification or terminal result still requires later reconciliation;
+the notification does not guarantee immediate delivery.
+
+Release 46075711092 qualified and published its image, reached the receiver on
+port2222, and returned a typed UNKNOWN receipt. SAHEL independently matched receipt
+`3bbdeb9285c583aa5fe5b5181a7a0ffd216b64fa6671bb5d0448db0c967d062d` and confirmed
+the prior app remained healthy. The unresolved barriers were retained. A separate
+diagnostic acquisition succeeded and established that the published manifest's
+config digest matches the receipt, while Docker29.10's containerd store reports
+the manifest digest as its runtime image ID. The adapter must bind those distinct
+identities before execution; accepting an arbitrary mismatch is not recovery.
+At this checkpoint first PRE, repeat deployment and rollback remain unconfirmed.

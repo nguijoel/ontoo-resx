@@ -193,4 +193,26 @@ jobs:
             test "$IMAGE_RESULT" = success
           fi
 
+  completion:
+    name: Notify trusted integration reconciler
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'nguijoel/ontoo-resx' && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/staging')
+    needs: [required]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      actions: write
+    steps:
+      # Explicit dispatch survives token-suppressed completion events. No PR
+      # checkout or input is executed, and the reconciler re-verifies terminal CI.
+      - name: Request protected reconciliation after integration checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node <<'NODE'
+          (async()=>{const r=await fetch('https://api.github.com/repos/nguijoel/ontoo-resx/actions/workflows/resx-reconcile.yml/dispatches',{
+            method:'POST',headers:{Authorization:'Bearer '+process.env.GH_TOKEN,'Content-Type':'application/json'},
+            body:JSON.stringify({ref:'dev'}),redirect:'error',signal:AbortSignal.timeout(20000)});
+            if(r.status!==204)throw Error();})().catch(()=>{console.error('INTEGRATION_RECONCILIATION_UNCONFIRMED');process.exitCode=1;});
+          NODE
+
 # No approval, registry, database, merge, OIDC or host credentials in PR validation.

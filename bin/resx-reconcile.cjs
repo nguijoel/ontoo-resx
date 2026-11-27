@@ -270,19 +270,27 @@ function nativeCreator({ api, authoringApi }) {
     return result;
   };
 }
-async function latestValidatedTip(api) {
+async function latestValidatedTip(api, delay = ms => new Promise(resolve => setTimeout(resolve, ms))) {
   // Recover missed workflow_run edges after enrollment; never reuse an older
   // green run when the newest attempt for that exact protected tip is failing.
-  for (const branch of ['dev', 'staging']) {
-    const sha = (await api('/git/ref/heads/' + branch)).object.sha;
-    assert(SHA.test(sha));
-    const rows = await api('/actions/workflows/resx-ci.yml/runs?branch=' + branch + '&head_sha=' + sha + '&per_page=100', null, 'workflow_runs');
-    const latest = rows
-      .filter(r => r.head_branch === branch && r.head_sha === sha && ['push', 'workflow_dispatch'].includes(r.event))
-      .sort((a, b) => b.id - a.id)[0];
-    if (latest?.status === 'completed' && latest.conclusion === 'success') return latest;
+  for (let poll = 0; poll <= 5; poll++) {
+    let pending = false;
+    for (const branch of ['dev', 'staging']) {
+      const sha = (await api('/git/ref/heads/' + branch)).object.sha;
+      assert(SHA.test(sha));
+      const rows = await api('/actions/workflows/resx-ci.yml/runs?branch=' + branch + '&head_sha=' + sha + '&per_page=100', null, 'workflow_runs');
+      const latest = rows
+        .filter(r => r.head_branch === branch && r.head_sha === sha && ['push', 'workflow_dispatch'].includes(r.event))
+        .sort((a, b) => b.id - a.id)[0];
+      if (latest?.status === 'completed' && latest.conclusion === 'success') return latest;
+      if (latest && latest.status !== 'completed') pending = true;
+    }
+    // A CI completion notification is dispatched by its final job, before the
+    // enclosing run becomes terminal. Re-read live refs/runs; never trust the
+    // notification as validation or reuse a superseded green attempt.
+    if (!pending || poll === 5) return null;
+    await delay(2000);
   }
-  return null;
 }
 async function openFeature({ api, run, createPullRequest }) {
   if (!run || run.conclusion !== 'success' || run.event !== 'push' || !/^codex\/[a-z0-9][a-z0-9._/-]{0,100}$/i.test(run.head_branch || '')) return;

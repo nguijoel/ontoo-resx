@@ -420,6 +420,56 @@ test('enrollment recovers already-successful current-tip CI without a manual dis
       : original(path, ...args);
   assert.equal(await latestValidatedTip(api), null);
 });
+
+test('integration completion waits for terminal CI, with bounded polling and fresh branch refs', async () => {
+  const { latestValidatedTip } = require('./resx-reconcile.cjs');
+  for (const mode of ['success', 'failure', 'pending', 'moved']) {
+    let waits = 0;
+    const api = async path => {
+      if (path.startsWith('/git/ref/heads/')) return { object: { sha: mode === 'moved' && waits ? old : head } };
+      if (path.includes('branch=staging') || (mode === 'moved' && waits)) return [];
+      return [{ ...run, head_sha: head, event: 'workflow_dispatch',
+        status: waits && mode !== 'pending' ? 'completed' : 'in_progress',
+        conclusion: waits && mode === 'success' ? 'success' : mode === 'failure' && waits ? 'failure' : null }];
+    };
+    const result = await latestValidatedTip(api, async ms => { assert.equal(ms, 2000); waits++; });
+    assert.equal(result?.conclusion || null, mode === 'success' ? 'success' : null);
+    assert.equal(waits, mode === 'pending' ? 5 : 1);
+  }
+});
+
+test('actual CI completion notification is limited to protected integration dispatches and a fixed trusted workflow', async () => {
+  const fs = require('node:fs'), vm = require('node:vm');
+  const text = fs.readFileSync(require('node:path').join(__dirname, '../.github/workflows/resx-ci.yml'), 'utf8');
+  const job = text.split('  completion:\n')[1];
+  assert.ok(job);
+  const condition = job.match(/^    if: (.+)$/m)[1];
+  for (const [event, ref, repo, allowed] of [
+    ['workflow_dispatch', 'dev', 'nguijoel/ontoo-resx', true],
+    ['workflow_dispatch', 'staging', 'nguijoel/ontoo-resx', true],
+    ['pull_request', 'dev', 'nguijoel/ontoo-resx', false],
+    ['push', 'dev', 'nguijoel/ontoo-resx', false],
+    ['workflow_dispatch', 'codex/change', 'nguijoel/ontoo-resx', false],
+    ['workflow_dispatch', 'dev', 'other/repo', false],
+  ]) assert.equal(vm.runInNewContext(condition, { github: { event_name: event, ref: 'refs/heads/' + ref, repository: repo } }), allowed);
+  assert.match(job, /needs: \[required\]/);
+  assert.match(job, /permissions:\n      actions: write/);
+  assert.doesNotMatch(job, /uses:.*checkout|secrets\./);
+  const script = job.match(/          node <<'NODE'\n([\s\S]+?)          NODE/)[1].replace(/^          /gm, '');
+  for (const status of [204, 403]) {
+    const process = { env: { GH_TOKEN: 'synthetic-token' }, exitCode: undefined }, errors = [], calls = [];
+    await vm.runInNewContext(script, { process, AbortSignal,
+      fetch: async (url, options) => { calls.push({ url, options }); return { status }; },
+      console: { error: message => errors.push(message) } });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, 'https://api.github.com/repos/nguijoel/ontoo-resx/actions/workflows/resx-reconcile.yml/dispatches');
+    assert.equal(calls[0].options.method, 'POST');
+    assert.deepEqual(JSON.parse(calls[0].options.body), { ref: 'dev' });
+    assert.equal(calls[0].options.redirect, 'error');
+    assert.equal(process.exitCode, status === 204 ? undefined : 1);
+    assert.deepEqual(errors, status === 204 ? [] : ['INTEGRATION_RECONCILIATION_UNCONFIRMED']);
+  }
+});
 test('exact reviewed staging merge can sync from validated dev without suppressed staging push CI', async () => {
   const f = fixture(),
     original = f.api;
