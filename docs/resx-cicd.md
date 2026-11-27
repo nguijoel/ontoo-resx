@@ -160,13 +160,13 @@ Smoke is GET-only, never POST login/push. Legacy2d749 has no runtime-info endpoi
 
 ## Acceptance state
 
-No first/repeat/rollback live proof has completed for this pipeline. Required
-live acceptance is now active, not deferred. Native control branch fast-feedback
-run45680652448 succeeded at831cbfa; this is not full required PR CI or deployment.
-Historical full source/app/image CI run45552017483 passed at637e86bf. New controls
-need their own exact-head required checks and normal material bootstrap review.
-PR6 remains closed/unmerged; its app feature ancestry is preserved for the single
-replacement release candidate. No new POC or product demo replaces that work.
+As of 27 November 2026, the first automated healthy PRE release is **not
+confirmed**. PR creation, required CI, protected native merge, inherited material
+approval during dev-to-staging promotion, image qualification and GHCR publishing
+have actual successful evidence. They do not establish successful deployment.
+Repeat deployment and explicit rollback/recovery remain unproven. The owner has
+now instructed completion of all live proof stages in that order; the earlier
+proof deferral is superseded.
 
 The removed custom authoring broker, evaluator/publisher/watchdog services,
 Docker evaluator, archive/collector framework, HTTP/OIDC ingress and queue remain
@@ -174,14 +174,14 @@ excluded. Preserve their inactive files/keys/evidence; do not start them or infe
 key revocation/deletion. Native Actions orchestrates; the existing controller
 retains the necessary deployment safety boundary.
 
-
 ## Bootstrap PR and repeat-cycle reconciliation
 
 Normal App-authored [PR8](https://github.com/nguijoel/ontoo-resx/pull/8)
 replaces closed PR6 without discarding its feature ancestry. Initial head3faec860
 passed required pull-request validation run45692919326; that evidence does not
-cover later descendants. The bootstrap remains unmerged and requires authorised
-material review after final exact-head validation.
+cover later descendants. PR8 subsequently merged through normal protections at
+30614fa after owner review6065781906. Later control changes retain normal
+exact-head required checks and authorised material review.
 
 Reconciliation recovers successful current-tip CI after enrollment without a
 manual workflow trigger. Equal-tree staging ancestry sync requires the exact
@@ -208,13 +208,55 @@ GitHub CLI implementation reference:
 https://github.com/cli/cli/blob/trunk/pkg/cmd/pr/merge/merge.go
 
 
-Current checkpoint (25 November): PR8 merged normally through enforced protections
-at30614fa after owner review6065781906 and successful required CI. Authoring and
-risk keys are provisioned. Host activation receipt8c7e90ce binds the enabled
-restricted receiver; GitHub deployment flags remain off, original PRE is healthy
-and unchanged, and no first/repeat/rollback deployment proof has run. Infrastructure
-paused after this task at the owner's request; the owner subsequently resumed
-first-PRE delivery while deferring repeat-deployment and rollback demonstrations.
-Authoring/risk native jobs are enrolled for credential qualification, with
-conservative branch reviews unchanged and PRE deployment still disabled. The local ready-PR adapter correction passes23 focused tests, including
-actual main-to-HTTP PUT forwarding; it still needs normal control-PR integration.
+## P1 network incident and approved resolution — 27 November
+
+PR12 was approved at exact head2dec3de by review6079861122 and merged natively
+into dev6466bf3. Automatic promotion PR14 carried that approval without a second
+human review and merged staging94be473. Required source/application/image CI and
+immutable GHCR publishing passed.
+
+Release [45891357594](https://github.com/nguijoel/ontoo-resx/actions/runs/45891357594)
+failed during SSH exchange on 26 November at20:32:54 UTC. The retained request is
+60b920a3e900f94fd6061260adb9876dc4018a4e3d7cb8a2831a54336c1d3325. No root response
+was decoded; the result remains UNKNOWN, with no deployment retry. SAHEL's fresh
+read-only reconciliation found no matching operation or pending barrier, while
+the prior app remained healthy. This is not a claim that every possible remote
+side effect can be disproved from absent records.
+
+SAHEL found inbound port22 restricted to one source, with the enrolled receiver,
+key and administrative controls intact. Credential-free GitHub-runner probe
+[45914825503](https://github.com/nguijoel/ontoo-resx/actions/runs/45914825503), source
+80242a6, independently failed at TCP connect to port22 with no authentication or
+receiver call. This proves the current runner path is unavailable; the historical
+failure's timeout classification remains an evidence-supported inference.
+
+The owner's primary Manager instruction01a21a55-3b36 approved a dedicated,
+key-only restricted deployment endpoint while preserving administrative SSH
+firewall restrictions. It requires the existing forced receiver, protected
+GitHub credentials, pinned host verification, rate limiting and audit logging;
+no interactive shell, password, forwarding, root login or unrestricted Docker.
+No OIDC, WireGuard, fixed-egress infrastructure or further POC is required.
+
+SAHEL owns host/socket lifecycle, firewall/rate limits, effective-policy checks,
+administrative recovery and native retained-target rollback wiring. Deploy owns
+the protected GitHub client, fixed endpoint/pin, release evidence and coordinated
+live proof. Port2222 was selected only after SAHEL's fresh unused-port check.
+The client and public probe are being bound to that fixed port; it is not yet a
+qualified live listener. Port22's management allowlist must stay unchanged.
+
+PR13 carries the immediate confirmed-merge handoff fix and safe transport
+diagnostics. It remains subject to exact-head CI and material governance review;
+it is not an architecture approval or proof that PRE has deployed. The diagnostic
+workflow has no environment, secrets, checkout, authentication or receiver access.
+It emits only bounded public connectivity/pin results. The release client retains
+only native exit status, allowed signal and a closed error category, never raw
+SSH stderr, key contents or private paths. Unknown or signalled exchanges do not
+become automatic retry authority.
+
+Before the first live release, independently qualify the installed endpoint and
+pin, preserving current/config/source bindings, retained recovery and unresolved-
+operation guards. Finish the native app-only retained-target rollback path before
+its explicit proof; parser presence alone is not implementation. No SQL, migration,
+database restore, S3 push or production operation is part of this work. Record first healthy PRE,
+subsequent update and rollback/recovery receipts separately; do not count an old
+healthy homepage or a completed image build as deployment acceptance.

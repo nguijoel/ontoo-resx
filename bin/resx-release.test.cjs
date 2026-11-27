@@ -81,6 +81,8 @@ test('fixed SSH argv ignores ambient configs and has no remote command or shell 
   const a = c.sshArguments('/tmp/synthetic key', '/tmp/synthetic hosts');
   assert.deepEqual(a.slice(0, 2), ['-F', '/dev/null']);
   assert.equal(a.at(-1), 'ontoo-resx-pre-deploy@185.189.0.51');
+  assert.equal(a[a.indexOf('-p') + 1], '2222');
+  assert.equal(c.PORT, 2222);
   assert.equal(a[a.indexOf('-i') + 1], '/tmp/synthetic key');
   assert.ok(a.includes('StrictHostKeyChecking=yes'));
   assert.ok(a.includes('ClearAllForwardings=yes'));
@@ -194,7 +196,7 @@ test('BUSY wait is bounded and cannot become success without a confirmed termina
 
 test('enrolled public host key matches the approved fingerprint without network discovery', () => {
   const line = c.knownHostLine();
-  assert.equal(line, c.HOST + ' ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIF5vI6R8M921fusUs79oLlUMPawhoXszXjClvC/ru4MI\n');
+  assert.equal(line, '[' + c.HOST + ']:' + c.PORT + ' ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIF5vI6R8M921fusUs79oLlUMPawhoXszXjClvC/ru4MI\n');
   assert.throws(() => c.knownHostLine('AAAAC3NzaC1lZDI1NTE5AAAAIF5vI6R8M921fusUs79oLlUMPawhoXszXjClvC/ru4MJ'));
   assert.throws(() => c.knownHostLine('untrusted key'));
 });

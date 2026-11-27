@@ -5,6 +5,7 @@ const crypto = require('node:crypto'),
   path = require('node:path'),
   cp = require('node:child_process');
 const HOST = '185.189.0.51',
+  PORT = 2222,
   USER = 'ontoo-resx-pre-deploy',
   PIN = 'SHA256:5kusMUREWU3SqjdhScMHqnokrqvi4WcLJ5tDCy2cHcI';
 const HOST_KEY = 'AAAAC3NzaC1lZDI1NTE5AAAAIF5vI6R8M921fusUs79oLlUMPawhoXszXjClvC/ru4MI';
@@ -15,7 +16,7 @@ function knownHostLine(publicKey = HOST_KEY) {
   demand(wire.toString('base64') === publicKey);
   const fingerprint = 'SHA256:' + crypto.createHash('sha256').update(wire).digest('base64').replace(/=+$/, '');
   demand(fingerprint === PIN);
-  return HOST + ' ssh-ed25519 ' + publicKey + '\n';
+  return '[' + HOST + ']:' + PORT + ' ssh-ed25519 ' + publicKey + '\n';
 }
 function demand(ok) {
   if (!ok) throw Error('RESX_RELEASE_UNCONFIRMED_NO_RETRY');
@@ -118,6 +119,8 @@ function sshArguments(key, hosts) {
     '-F',
     '/dev/null',
     '-T',
+    '-p',
+    String(PORT),
     '-i',
     key,
     '-o',
@@ -280,4 +283,4 @@ if (require.main === module)
     console.error('RESX_RELEASE_UNCONFIRMED_PRESERVE_STATE_NO_RETRY');
     process.exitCode = 1;
   });
-module.exports = { request, response, decode, canonical, sshArguments, exchange, knownHostLine, transportDiagnostic, HOST, USER, PIN };
+module.exports = { request, response, decode, canonical, sshArguments, exchange, knownHostLine, transportDiagnostic, HOST, PORT, USER, PIN };
