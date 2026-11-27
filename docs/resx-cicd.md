@@ -241,8 +241,13 @@ SAHEL owns host/socket lifecycle, firewall/rate limits, effective-policy checks,
 administrative recovery and native retained-target rollback wiring. Deploy owns
 the protected GitHub client, fixed endpoint/pin, release evidence and coordinated
 live proof. Port2222 was selected only after SAHEL's fresh unused-port check.
-The client and public probe are being bound to that fixed port; it is not yet a
-qualified live listener. Port22's management allowlist must stay unchanged.
+The fixed-port client and public probe require bracketed known-hosts identity
+[185.189.0.51]:2222 with the unchanged pinned host key. Port22's management
+allowlist stays unchanged. The first listener attempt was recovered after an
+IPv4 omission; run02 explicitly binds both IPv4 and IPv6 on ports22 and2222.
+Its protected receipt1d006bea48f6c1650d235a33939a8928b99c763ff9c0050caa21cbd98582e7a9
+and independent fresh-admin readback establish the host listener and policy,
+not yet GitHub connectivity or application deployment. No old intent was reset.
 
 PR13 carries the immediate confirmed-merge handoff fix and safe transport
 diagnostics. It remains subject to exact-head CI and material governance review;
