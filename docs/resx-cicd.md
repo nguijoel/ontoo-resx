@@ -208,7 +208,7 @@ GitHub CLI implementation reference:
 https://github.com/cli/cli/blob/trunk/pkg/cmd/pr/merge/merge.go
 
 
-## P1 network incident and approved resolution — 27 November
+## P1 network incident and approved resolution - 27 November
 
 PR12 was approved at exact head2dec3de by review6079861122 and merged natively
 into dev6466bf3. Automatic promotion PR14 carried that approval without a second
