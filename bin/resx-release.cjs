@@ -85,6 +85,34 @@ function invoke(command, args, input, timeout = 15000) {
     env: { PATH: process.env.PATH, HOME: process.env.HOME, LANG: 'C' },
   });
 }
+function transportDiagnostic(error) {
+  const stderr =
+    typeof error.stderr === 'string'
+      ? error.stderr.slice(0, 65536)
+      : Buffer.isBuffer(error.stderr)
+        ? error.stderr.subarray(0, 65536).toString('utf8')
+        : '';
+  const patterns = [
+    ['key-format', /Load key [^\r\n]{0,4096}: (invalid format|error in libcrypto)|UNPROTECTED PRIVATE KEY FILE|bad permissions/],
+    ['host-key', /Host key verification failed|REMOTE HOST IDENTIFICATION HAS CHANGED/],
+    ['connect-timeout', /connect to host [^\r\n]{0,256}: (Connection timed out|Operation timed out)|Connection timed out during banner exchange/],
+    ['connect-refused', /connect to host [^\r\n]{0,256}: Connection refused/],
+    ['authentication', /Permission denied \(publickey(?:,[^\r\n)]{0,128})?\)/],
+    ['forced-command', /sudo: [^\r\n]{0,4096}(a password is required|not allowed|command not found|no tty present)/],
+    ['receiver-rejected', /Approved PRE release rejected or failed/],
+  ];
+  return {
+    nativeExitCode: Number.isInteger(error.status) && error.status >= 0 && error.status <= 255 ? error.status : null,
+    timedOut: !!error.signal || error.code === 'ETIMEDOUT',
+    signal:
+      typeof error.signal === 'string'
+        ? ['SIGTERM', 'SIGKILL', 'SIGINT', 'SIGHUP', 'SIGABRT'].includes(error.signal)
+          ? error.signal
+          : 'OTHER'
+        : null,
+    category: patterns.find(([, pattern]) => pattern.test(stderr))?.[0] || 'unknown',
+  };
+}
 function sshArguments(key, hosts) {
   return [
     '-F',
@@ -183,7 +211,8 @@ async function main() {
   const evidence = path.join(process.env.RUNNER_TEMP, 'resx-release-request.json');
   fs.writeFileSync(evidence, JSON.stringify(selected.packet) + '\n', { flag: 'wx', mode: 0o600 });
   let phase = 'private-key-file',
-    sshInvoked = false;
+    sshInvoked = false,
+    transport = null;
   try {
     fs.writeFileSync(key, secret, { flag: 'wx', mode: 0o600 });
     phase = 'host-key-pin';
@@ -200,8 +229,10 @@ async function main() {
           try {
             phase = 'ssh-exchange';
             sshInvoked = true;
+            transport = { nativeExitCode: 0, timedOut: false, signal: null, category: 'none' };
             return { raw: invoke('/usr/bin/ssh', args, JSON.stringify(selected.packet) + '\n', 900000), exitCode: 0, timedOut: false };
           } catch (error) {
+            transport = transportDiagnostic(error);
             return { raw: String(error.stdout || ''), exitCode: error.status, timedOut: !!error.signal || error.code === 'ETIMEDOUT' };
           }
         },
@@ -235,7 +266,7 @@ async function main() {
   } catch (error) {
     fs.writeFileSync(
       path.join(process.env.RUNNER_TEMP, 'resx-release-transport.json'),
-      JSON.stringify({ phase, sshInvoked, automaticRetry: false }) + '\n',
+      JSON.stringify({ phase, sshInvoked, automaticRetry: false, transport }) + '\n',
       { flag: 'wx', mode: 0o600 },
     );
     throw error;
@@ -249,4 +280,4 @@ if (require.main === module)
     console.error('RESX_RELEASE_UNCONFIRMED_PRESERVE_STATE_NO_RETRY');
     process.exitCode = 1;
   });
-module.exports = { request, response, decode, canonical, sshArguments, exchange, knownHostLine, HOST, USER, PIN };
+module.exports = { request, response, decode, canonical, sshArguments, exchange, knownHostLine, transportDiagnostic, HOST, USER, PIN };

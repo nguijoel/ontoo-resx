@@ -1,0 +1,93 @@
+name: RESX public transport qualification
+on:
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: resx-public-transport-qualification
+  cancel-in-progress: false
+jobs:
+  public-transport:
+    if: github.repository == 'nguijoel/ontoo-resx'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Check the fixed PRE endpoint without credentials
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64, errno, hashlib, json, os, re, socket, subprocess, sys, time
+          host = "185.189.0.51"
+          pin = "SHA256:5kusMUREWU3SqjdhScMHqnokrqvi4WcLJ5tDCy2cHcI"
+          result = {"version": 1, "host": host, "port": 22, "tcpConnected": False,
+                    "sshBannerReceived": False, "hostPinVerified": False,
+                    "authenticationAttempted": False, "receiverCalled": False,
+                    "applicationChanged": False, "category": "unconfirmed"}
+          phase = "tcp-connect"
+          try:
+              with socket.create_connection((host, 22), timeout=10) as connection:
+                  result["tcpConnected"] = True
+                  phase = "ssh-banner"
+                  deadline = time.monotonic() + 5
+                  pending = b""
+                  seen = lines = 0
+                  while not result["sshBannerReceived"]:
+                      remaining = deadline - time.monotonic()
+                      if remaining <= 0:
+                          raise TimeoutError()
+                      connection.settimeout(remaining)
+                      chunk = connection.recv(min(256, 4096 - seen))
+                      if time.monotonic() > deadline:
+                          raise TimeoutError()
+                      if not chunk:
+                          raise ValueError("banner")
+                      seen += len(chunk)
+                      pending += chunk
+                      while b"\n" in pending:
+                          line, pending = pending.split(b"\n", 1)
+                          lines += 1
+                          if lines > 8:
+                              raise ValueError("banner")
+                          if line.startswith(b"SSH-"):
+                              if len(line) + 1 > 255 or not re.fullmatch(rb"SSH-(?:2\.0|1\.99)-[!-~]+(?: [ -~]*)?\r?", line):
+                                  raise ValueError("banner")
+                              result["sshBannerReceived"] = True
+                              break
+                      if not result["sshBannerReceived"] and seen >= 4096:
+                          raise ValueError("banner")
+              phase = "host-key"
+              scan = subprocess.run(["/usr/bin/ssh-keyscan", "-T", "10", "-t", "ed25519", host],
+                                    input=b"", stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                    timeout=12, check=False, env={"PATH": "/usr/bin:/bin", "LANG": "C"})
+              result["scanExitCode"] = scan.returncode
+              if scan.returncode != 0 or len(scan.stdout) > 16384:
+                  raise ValueError("scan")
+              lines = [line for line in scan.stdout.decode("ascii").splitlines() if line and not line.startswith("#")]
+              if len(lines) != 1:
+                  raise ValueError("scan")
+              fields = lines[0].split()
+              if len(fields) != 3 or fields[:2] != [host, "ssh-ed25519"]:
+                  raise ValueError("scan")
+              wire = base64.b64decode(fields[2], validate=True)
+              fingerprint = "SHA256:" + base64.b64encode(hashlib.sha256(wire).digest()).decode().rstrip("=")
+              if fingerprint != pin:
+                  result["category"] = "host-key-mismatch"
+              else:
+                  result["hostPinVerified"] = True
+                  result["category"] = "verified"
+          except (socket.timeout, TimeoutError):
+              result["category"] = "connect-timeout" if phase == "tcp-connect" else "banner-timeout"
+          except ConnectionRefusedError:
+              result["category"] = "connect-refused"
+          except subprocess.TimeoutExpired:
+              result["category"] = "host-key-scan-timeout"
+          except OSError as error:
+              result["category"] = "network-unreachable" if error.errno in (errno.ENETUNREACH, errno.EHOSTUNREACH) else "network-unconfirmed"
+          except Exception:
+              result["category"] = "host-key-unconfirmed" if phase == "host-key" else "banner-unconfirmed"
+          result["phase"] = phase
+          encoded = json.dumps(result, sort_keys=True)
+          print(encoded)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf8") as summary:
+              summary.write("Public transport qualification only; no authentication, receiver call or app operation.\n```json\n" + encoded + "\n```\n")
+          sys.exit(0 if result["hostPinVerified"] else 1)
+          PY

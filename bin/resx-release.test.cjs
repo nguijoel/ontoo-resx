@@ -198,3 +198,34 @@ test('enrolled public host key matches the approved fingerprint without network 
   assert.throws(() => c.knownHostLine('AAAAC3NzaC1lZDI1NTE5AAAAIF5vI6R8M921fusUs79oLlUMPawhoXszXjClvC/ru4MJ'));
   assert.throws(() => c.knownHostLine('untrusted key'));
 });
+
+test('SSH diagnostic retains only closed status/category and never raw provider/path/key details', () => {
+  const cases = [
+    ['ssh: connect to host 185.189.0.51 port 22: Connection timed out', 'connect-timeout'],
+    ['ssh: connect to host 185.189.0.51 port 22: Connection refused', 'connect-refused'],
+    ['Host key verification failed.', 'host-key'],
+    ['Permission denied (publickey).', 'authentication'],
+    ['Load key "/private/key": error in libcrypto\nPermission denied (publickey).', 'key-format'],
+    ['sudo: a password is required', 'forced-command'],
+    ['Approved PRE release rejected or failed', 'receiver-rejected'],
+    ['unknown private-value /private/path', 'unknown'],
+  ];
+  for (const [stderr, category] of cases) {
+    const row = c.transportDiagnostic({ stderr: Buffer.from(stderr), status: 255 });
+    assert.deepEqual(row, { nativeExitCode: 255, timedOut: false, signal: null, category });
+    assert.equal(JSON.stringify(row).includes('private'), false);
+    assert.equal(JSON.stringify(row).includes('185.189'), false);
+  }
+  assert.deepEqual(c.transportDiagnostic({ status: null, signal: 'SIGTERM', code: 'ETIMEDOUT', stderr: 'private-value' }), {
+    nativeExitCode: null,
+    timedOut: true,
+    signal: 'SIGTERM',
+    category: 'unknown',
+  });
+  assert.deepEqual(c.transportDiagnostic({ status: true, signal: 'private-value', stderr: {} }), {
+    nativeExitCode: null,
+    timedOut: true,
+    signal: 'OTHER',
+    category: 'unknown',
+  });
+});
