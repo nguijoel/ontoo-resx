@@ -17,7 +17,7 @@ Status: Remediation pending; this increment does not certify the inherited index
 | G07 | webapp/src/assets/fonts/material-icons/MaterialIcons-Regular.ttf, webapp/src/assets/fonts/material-icons/LICENSE.txt, webapp/src/assets/fonts/material-icons/README.md | Required locally served icon font with Apache-2.0 attribution/provenance |
 | G02 | deploy/resx/Dockerfile, deploy/resx/Dockerfile.dockerignore, deploy/resx/build-inputs.json | Isolated hosted PRE build definition and context boundary |
 | G04 | package.json, webapp/angular.json | Existing frontend build configurations with dedicated preview target |
-| G02 | .github/CODEOWNERS, .github/workflows/resx-fast.yml, .github/workflows/resx-ci.yml, .github/workflows/resx-reconcile.yml, .github/workflows/resx-release.yml | Scoped RESX validation, protected promotion and PRE request controls |
+| G02 | .github/CODEOWNERS, .github/workflows/resx-fast.yml, .github/workflows/resx-ci.yml, .github/workflows/resx-reconcile.yml, .github/workflows/resx-release.yml, .github/workflows/resx-transport-check.yml | Scoped RESX validation, protected promotion and PRE request controls |
 | G09 | bin/ontoo-cicd.cjs, bin/resx-cicd.cjs, bin/resx-reconcile.cjs, bin/resx-risk.cjs, bin/resx-release.cjs, bin/resx-export-context.py | Source admission, protected GitHub orchestration and immutable Git context export |
 | G05 | bin/resx-cicd.test.cjs, bin/resx-reconcile.test.cjs, bin/resx-risk.test.cjs, bin/resx-release.test.cjs, bin/resx-export-context.test.py | Positive and negative pipeline-control regressions |
 | G06 | docs/resx-cicd.md | Maintained implementation and acceptance ledger |
