@@ -295,4 +295,23 @@ diagnostic acquisition succeeded and established that the published manifest's
 config digest matches the receipt, while Docker29.10's containerd store reports
 the manifest digest as its runtime image ID. The adapter must bind those distinct
 identities before execution; accepting an arbitrary mismatch is not recovery.
-At this checkpoint first PRE, repeat deployment and rollback remain unconfirmed.
+The image-identity correction was subsequently installed and independently read
+back. Exact-operation reconciliation retained the original UNKNOWN receipt and
+history while resolving only its failed-operation markers.
+
+Fresh release [46132430798](https://github.com/nguijoel/ontoo-resx/actions/runs/46132430798)
+completed with `UPDATED` for staging `ae57bc9`. Its root receipt
+`13bc5f43ad7a6df043e4c40eeb7d880362f57fc8628c512e92b49181fc71077c`
+and release `983f659ee0eb6249b750f92a5933dd6647bb3818fc85a15712d7a11b3319ba86`
+were independently matched to the running source, registry manifest/config/runtime
+identity mapping, healthy loopback/public TLS routes, preserved resource profiles
+and clear admission markers. This establishes the first healthy pipeline PRE.
+
+Routine [PR19](https://github.com/nguijoel/ontoo-resx/pull/19) was then created,
+risk-qualified and merged automatically into dev `6ea503b`. Its automatically
+dispatched integration validation
+[46134280123](https://github.com/nguijoel/ontoo-resx/actions/runs/46134280123)
+succeeded, but no completion reconciliation or staging promotion followed in the
+observed window. This is the remaining handoff defect addressed by this change;
+manual reconciliation would not count as unattended repeat proof. Repeat PRE and
+retained-target rollback remain unconfirmed at this checkpoint.
