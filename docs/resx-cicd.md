@@ -265,3 +265,53 @@ its explicit proof; parser presence alone is not implementation. No SQL, migrati
 database restore, S3 push or production operation is part of this work. Record first healthy PRE,
 subsequent update and rollback/recovery receipts separately; do not count an old
 healthy homepage or a completed image build as deployment acceptance.
+
+### Integration completion handoff and current PRE checkpoint
+
+After owner approval, PR13 merged into dev `f2701d3`. Its integration CI
+[46073376017](https://github.com/nguijoel/ontoo-resx/actions/runs/46073376017)
+succeeded, but no completion-triggered reconciliation was observed. One recorded
+enrollment reconciliation created App-authored PR16. PR16's normal PR CI succeeded;
+its `workflow_run` reconciliation then merged staging `ae57bc9` and dispatched
+release [46075711092](https://github.com/nguijoel/ontoo-resx/actions/runs/46075711092)
+automatically. These enrollment interventions are not unattended repeat proof.
+
+The completion job added here explicitly dispatches the fixed trusted reconciler
+after successful integration validation. It runs only for `workflow_dispatch` on
+this repository's dev/staging refs, depends on the required validation job, executes
+no checkout, and receives only job-scoped Actions write permission. PR validation
+does not receive this permission. The notification is scheduling evidence: the
+reconciler still reads current protected refs and the latest actual CI attempt.
+It polls at most five times at two-second intervals if that run is not yet terminal;
+failure, a moved tip, or a still-pending run cannot substitute an older green run.
+A delayed notification or terminal result still requires later reconciliation;
+the notification does not guarantee immediate delivery.
+
+Release 46075711092 qualified and published its image, reached the receiver on
+port2222, and returned a typed UNKNOWN receipt. SAHEL independently matched receipt
+`3bbdeb9285c583aa5fe5b5181a7a0ffd216b64fa6671bb5d0448db0c967d062d` and confirmed
+the prior app remained healthy. The unresolved barriers were retained. A separate
+diagnostic acquisition succeeded and established that the published manifest's
+config digest matches the receipt, while Docker29.10's containerd store reports
+the manifest digest as its runtime image ID. The adapter must bind those distinct
+identities before execution; accepting an arbitrary mismatch is not recovery.
+The image-identity correction was subsequently installed and independently read
+back. Exact-operation reconciliation retained the original UNKNOWN receipt and
+history while resolving only its failed-operation markers.
+
+Fresh release [46132430798](https://github.com/nguijoel/ontoo-resx/actions/runs/46132430798)
+completed with `UPDATED` for staging `ae57bc9`. Its root receipt
+`13bc5f43ad7a6df043e4c40eeb7d880362f57fc8628c512e92b49181fc71077c`
+and release `983f659ee0eb6249b750f92a5933dd6647bb3818fc85a15712d7a11b3319ba86`
+were independently matched to the running source, registry manifest/config/runtime
+identity mapping, healthy loopback/public TLS routes, preserved resource profiles
+and clear admission markers. This establishes the first healthy pipeline PRE.
+
+Routine [PR19](https://github.com/nguijoel/ontoo-resx/pull/19) was then created,
+risk-qualified and merged automatically into dev `6ea503b`. Its automatically
+dispatched integration validation
+[46134280123](https://github.com/nguijoel/ontoo-resx/actions/runs/46134280123)
+succeeded, but no completion reconciliation or staging promotion followed in the
+observed window. This is the remaining handoff defect addressed by this change;
+manual reconciliation would not count as unattended repeat proof. Repeat PRE and
+retained-target rollback remain unconfirmed at this checkpoint.
