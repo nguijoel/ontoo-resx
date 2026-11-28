@@ -1,0 +1,20 @@
+{
+  "execution_mode": "planning-only",
+  "policy_version": "acg-planning-v1",
+  "target": "HOST003/ontoo-resx-mariadb-pre/ontoo_resx_pre",
+  "sourceModuleSha256": "be8e173b3e72234dc43e5593bb456f0adc7463229d2e033fb3832816d3994798",
+  "testSha256": "8a52b6c046d5ff2877cebfd0eeb19be1c482da055cc44cbff03b6dc772dd68ce",
+  "sourcePath": "/var/lib/ontoo/resx-pre-source-archive-run01/source.sql",
+  "sourceBytes": 436882,
+  "sourceSha256": "35877254af65ccab26ae94c8e2ffc48eba5773953a5ee72be18d29688fb4412b",
+  "stagingReceiptSha256": "5a0edef2dacbb7730e1c66680ec299fbd6c45aa5563651d5acd3372fcccb27ce",
+  "containerId": "f45243cc63ac603c50cc60d1e921a427b3372f57d2c3babab0ff47dfb0c191fb",
+  "order": ["physical and source hashes", "fresh fixed TSV preflight", "create database once", "create private restore identity and verify exact rights", "import original source bytes without force", "lock restore identity", "counts, foreign keys, migration ledger, allocator, exact SHOW CREATE and CHECK TABLE", "separately issue hosted runtime and unlock last"],
+  "restoreIdentity": "ontoo_resx_pre_restore@localhost",
+  "runtimeIdentity": "ontoo_resx_pre_runtime@172.21.0.3",
+  "runtimeScope": "SSL required; 13 application tables CRUD; migrations SELECT only; no global, schema DDL or grant authority",
+  "credentialCustody": "Create once privately; no password in argv, environment, logs, public source or results. Admin option file stays inside container. Restore uses separate root0400 private option file.",
+  "integrity": {"tables": 14, "columns": 77, "rows": 2863, "foreignKeys": 16, "orphanRows": 0, "migrationRows": 19, "migrationNextIdentity": 20},
+  "failure": "Preserve every intent, native exit and private capture. Database/account DDL is nontransactional. Report last known data/account state; no retry, adoption, reset, drop or automatic cleanup. A post-import comparison failure does not undo import.",
+  "deferred": ["broad functional QA", "DEV creation until PRE app starts", "production and cutover"]
+}
