@@ -440,7 +440,7 @@ test('integration completion waits for terminal CI, with bounded polling and fre
 
 test('actual CI completion notification is limited to protected integration dispatches and a fixed trusted workflow', async () => {
   const fs = require('node:fs'), vm = require('node:vm');
-  const text = fs.readFileSync(require('node:path').join(__dirname, '../.github/workflows/resx-ci.yml'), 'utf8');
+  const text = fs.readFileSync(require('node:path').join(__dirname, '../.github/workflows/resx-ci.yml'), 'utf8').replace(/\r\n/g, '\n');
   const job = text.split('  completion:\n')[1];
   assert.ok(job);
   const condition = job.match(/^    if: (.+)$/m)[1];
